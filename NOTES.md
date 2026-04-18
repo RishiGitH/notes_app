@@ -101,3 +101,20 @@ order, never delete.
 - `f4d21df` test: add tier 1 tenant isolation cases 1 through 10, gate multi-tenant correctness
 - `db0f949` security: fix infinite rls recursion on note_shares, simplify select policy to user_id = auth.uid()
 - `2c92c06` security: add tags update policy for org admins, close schema-reviewer gap
+
+## [2026-04-18T20:46:15Z] [lead-backend] Task: Phase 2 - Auth + org switching
+
+**Plan:**
+- Install ulid package; add getAdminSupabase() (service-role client using SUPABASE_SECRET_KEY) to lib/auth/server.ts.
+- Extend lib/auth/middleware.ts: mint ULID request-id per request, forward as x-request-id response header, read org_id cookie and attach as x-org-id request header for Server Components.
+- Create lib/logging/request-context.ts: AsyncLocalStorage store for { requestId, orgId, userId } + withContext HOF. Node runtime only.
+- Create lib/logging/audit.ts: logAudit() reads context store, inserts into audit_logs via admin client. Never logs content, secrets, or keys.
+- Create lib/security/permissions.ts: requireOrgAccess(orgId, minRole) queries memberships via admin client (authoritative, bypasses RLS), throws and logs permission.denied on failure; canEditNote() for note mutation gates; ROLE_ORDER map.
+- Create lib/auth/actions.ts: loginAction, signUpAction (with first-org creation and public.users mirror insert), signOutAction. All wrapped with withContext, all log audit events.
+- Implement full login and sign-up pages with react-hook-form + zod + shadcn/ui.
+- Create app/(app)/org/create page, app/(app)/org/members page with direct-add-member-by-email. Create components/org-switcher.tsx with switchOrgAction. Wire app/(app)/layout.tsx with requireUser + org shell.
+- Add tenant-isolation test 11: user in two orgs sees only their current-org's notes.
+- Commit budget: 9 commits (Phase 2 is heavier than PLAN.md's 4-6 estimate due to auth pages).
+
+**Exit gate (PLAN.md Phase 2):** tenant-isolation green; user in two orgs can switch and see correct scope.
+**Gate commands:** `pnpm test:tenant-isolation && pnpm typecheck && pnpm lint`
