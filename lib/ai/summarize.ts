@@ -20,7 +20,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
 import { getDb } from "@/lib/db/client";
 import { aiSummaries, notes, noteVersions } from "@/lib/db/schema";
-import { requireUser } from "@/lib/auth/server";
+import { requireUser, getAdminSupabase, getServerSupabase } from "@/lib/auth/server";
 import { requireOrgAccess, canEditNote } from "@/lib/security/permissions";
 import { logAudit } from "@/lib/logging/audit";
 import { withContext } from "@/lib/logging/request-context";
@@ -78,45 +78,30 @@ export async function generateSummary(noteId: string): Promise<string> {
   return withContext(ctx, async () => {
     await requireOrgAccess(note.orgId, "member");
 
-    // Verify the user can read the note (parent-resolves-permission).
-    // canEditNote is not required; read access is sufficient to generate a summary.
-    // We use the admin client in requireOrgAccess above which confirms membership.
-    // For private notes, check the note_shares or authorship:
-    // The canEditNote checks authorship + shares; we need canReadNote equivalent.
-    // Implement an inline check via admin client.
-    const { getAdminSupabase } = await import("@/lib/auth/server");
-    const admin = getAdminSupabase();
-    const { data: noteAccess } = await admin
+    // Verify the user can read the note using the user-scoped client.
+    // RLS enforces visibility (private/org/public_in_org) and share grants —
+    // the same pattern as getNoteAction (lib/notes/actions.ts).
+    // (AGENTS.md section 2 item 8: access resolves via current parent notes row)
+    const supabase = await getServerSupabase();
+    if (!supabase) throw new Error("Service unavailable");
+
+    const { data: noteAccess } = await supabase
       .from("notes")
-      .select("id, visibility, author_id")
+      .select("id, current_version_id")
       .eq("id", noteId)
       .is("deleted_at", null)
       .maybeSingle();
 
     if (!noteAccess) throw new Error("Note not found");
 
-    // Check read access: visibility org/public_in_org, author, or share recipient.
-    if (
-      noteAccess.visibility === "private" &&
-      noteAccess.author_id !== user.id
-    ) {
-      const { data: share } = await admin
-        .from("note_shares")
-        .select("id")
-        .eq("note_id", noteId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (!share) throw new Error("Forbidden");
-    }
-
     // Fetch exactly one note's current version. (AGENTS.md item 5)
-    if (!note.currentVersionId) throw new Error("Note has no content yet");
+    const currentVersionId = noteAccess.current_version_id as string | null;
+    if (!currentVersionId) throw new Error("Note has no content yet");
 
     const [version] = await db
       .select({ title: noteVersions.title, content: noteVersions.content })
       .from(noteVersions)
-      .where(eq(noteVersions.id, note.currentVersionId))
+      .where(eq(noteVersions.id, currentVersionId))
       .limit(1);
 
     if (!version) throw new Error("Note version not found");
@@ -214,7 +199,6 @@ export async function acceptSummary(
   const db = getDb();
 
   // Fetch the summary row via admin to get the note_id for auth.
-  const { getAdminSupabase } = await import("@/lib/auth/server");
   const admin = getAdminSupabase();
   const { data: summary } = await admin
     .from("ai_summaries")
@@ -271,7 +255,6 @@ export async function acceptSummary(
 export async function rejectSummary(summaryId: string): Promise<void> {
   const user = await requireUser();
 
-  const { getAdminSupabase } = await import("@/lib/auth/server");
   const admin = getAdminSupabase();
   const { data: summary } = await admin
     .from("ai_summaries")
