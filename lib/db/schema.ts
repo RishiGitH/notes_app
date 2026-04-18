@@ -551,6 +551,15 @@ export const tags = pgTable(
       to: "authenticated",
       using: sql`public.org_role(org_id) in ('owner', 'admin')`,
     }),
+    // Tags can be renamed by org admins only (tag names are unique per org;
+    // renames affect all notes carrying the tag).
+    updatePolicy: pgPolicy("tags_update_admin", {
+      as: "permissive",
+      for: "update",
+      to: "authenticated",
+      using: sql`public.org_role(org_id) in ('owner', 'admin')`,
+      withCheck: sql`public.org_role(org_id) in ('owner', 'admin')`,
+    }),
   }),
 ).enableRLS();
 

@@ -1,0 +1,1 @@
+CREATE POLICY "tags_update_admin" ON "tags" AS PERMISSIVE FOR UPDATE TO "authenticated" USING (public.org_role(org_id) in ('owner', 'admin')) WITH CHECK (public.org_role(org_id) in ('owner', 'admin'));
