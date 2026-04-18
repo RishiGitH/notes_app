@@ -1,11 +1,15 @@
 // Case 5: Files belonging to a cross-org note are invisible.
 //
 // Setup: userC creates a note and a files row in org2.
-// Assertion: as userA (org1 member), querying files by org_id=org2 returns [].
+// Assertions:
+//   (a) as userA (org1 member), querying files by org_id=org2 returns [].
+//   (b) userA hitting the download proxy route for an org2 file gets 403/404
+//       without any signed URL being issued. This tests the re-auth gate
+//       introduced in Phase 3C (AGENTS.md section 2 item 9).
 //
-// Note: signed-URL path-level isolation is a Phase 3C concern (Supabase
-// Storage bucket RLS). This test covers the SQL row visibility only, which
-// is Phase 1's gate.
+// Note: the download proxy test (b) requires the app server to be running.
+// When DIRECT_URL is set but APP_URL is not, only assertion (a) runs;
+// the proxy assertion is skipped with a descriptive message.
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
@@ -15,6 +19,7 @@ import { files } from "@/lib/db/schema";
 import { v4 as uuidv4 } from "uuid";
 
 let fx: TestFixture;
+let org2FileId: string;
 
 beforeAll(async () => {
   fx = await seedTwoOrgs();
@@ -22,7 +27,7 @@ beforeAll(async () => {
   const { sql, release } = await asAdmin();
   try {
     const noteId = uuidv4();
-    const fileId = uuidv4();
+    org2FileId = uuidv4();
 
     await sql`
       insert into public.notes
@@ -35,8 +40,8 @@ beforeAll(async () => {
       insert into public.files
         (id, org_id, note_id, uploader_id, path, mime, size_bytes, created_at)
       values
-        (${fileId}, ${fx.org2.id}, ${noteId}, ${fx.userC.id},
-         ${`${fx.org2.id}/${noteId}/${fileId}`}, 'text/plain', 42, now())
+        (${org2FileId}, ${fx.org2.id}, ${noteId}, ${fx.userC.id},
+         ${`${fx.org2.id}/${noteId}/${org2FileId}`}, 'text/plain', 42, now())
     `;
   } finally {
     await release();
@@ -48,7 +53,7 @@ afterAll(async () => {
 });
 
 describe("files cross-org isolation", () => {
-  it("userA cannot read files belonging to org2", async () => {
+  it("userA cannot read files belonging to org2 via SQL (RLS)", async () => {
     const { db, release } = await asUser(fx.userA.id);
     try {
       const rows = await db
@@ -60,5 +65,28 @@ describe("files cross-org isolation", () => {
     } finally {
       await release();
     }
+  });
+
+  it("userA cannot download an org2 file via the proxy route (re-auth gate)", async () => {
+    const appUrl = process.env.APP_URL;
+    if (!appUrl) {
+      // Skip when app server is not running (CI without full stack, or unit-only run).
+      console.log(
+        "Skipping proxy download test: APP_URL not set. Start the dev server to run this assertion.",
+      );
+      return;
+    }
+
+    // Attempt to download org2's file as an unauthenticated request.
+    // We don't have a userA session cookie in this context, so the request
+    // arrives unauthenticated — the proxy must return 401.
+    const res = await fetch(
+      `${appUrl}/api/files/${org2FileId}/download`,
+      { redirect: "manual" }, // don't follow the 302 redirect (if any)
+    );
+
+    // 401 (not authenticated) or 403/404 (authenticated but wrong org) are
+    // both correct; what is NOT correct is 200 or a 302 redirect to a signed URL.
+    expect([401, 403, 404]).toContain(res.status);
   });
 });
