@@ -1,0 +1,340 @@
+// AI summarizer Server Actions (Phase 3C, search-ai).
+//
+// Security invariants enforced here (AGENTS.md section 2):
+//   - Item 5: AI calls receive exactly one note's content per request.
+//   - Item 6: All LLM output is validated against summaryOutputSchema before
+//             it is stored, rendered, or passed anywhere.
+//   - Item 11: Logs never contain content, secrets, or raw model output.
+//   - Item 8: Access to ai_summaries resolves via the current parent notes row.
+//
+// Audit events produced (AGENTS.md section 8):
+//   ai.summarize.request  — a summary was generated (or rejected due to schema fail)
+//   ai.summarize.accept   — fields were accepted (partial or full)
+//   ai.summarize.reject   — user explicitly rejected the draft
+
+"use server";
+
+export const runtime = "nodejs";
+
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { headers } from "next/headers";
+import { getDb } from "@/lib/db/client";
+import { aiSummaries, notes, noteVersions } from "@/lib/db/schema";
+import { requireUser } from "@/lib/auth/server";
+import { requireOrgAccess, canEditNote } from "@/lib/security/permissions";
+import { logAudit } from "@/lib/logging/audit";
+import { withContext } from "@/lib/logging/request-context";
+import { getAnthropicClient, getModelId } from "@/lib/ai/client";
+import {
+  summaryOutputSchema,
+  acceptSummaryInput,
+  type AcceptSummaryInput,
+} from "@/lib/ai/schemas";
+
+// AiOutputInvalidError is a known error class for invalid model output.
+// Thrown (not swallowed) so the caller can surface an appropriate UI message.
+export class AiOutputInvalidError extends Error {
+  constructor(reason: string) {
+    super(`AI output did not match expected schema: ${reason}`);
+    this.name = "AiOutputInvalidError";
+  }
+}
+
+// Helper: read request-id and org-id from headers minted by middleware.
+async function buildContext(userId: string, orgId?: string) {
+  const h = await headers();
+  return {
+    requestId: h.get("x-request-id") ?? "unknown",
+    orgId: orgId ?? h.get("x-org-id") ?? null,
+    userId,
+  };
+}
+
+// generateSummary: call the Anthropic API with exactly one note's content
+// and persist the validated draft into ai_summaries.
+//
+// Returns the new ai_summaries row id.
+export async function generateSummary(noteId: string): Promise<string> {
+  const user = await requireUser();
+  const db = getDb();
+
+  // Fetch the note to get the org_id before requireOrgAccess.
+  const [note] = await db
+    .select({
+      id: notes.id,
+      orgId: notes.orgId,
+      authorId: notes.authorId,
+      currentVersionId: notes.currentVersionId,
+      deletedAt: notes.deletedAt,
+    })
+    .from(notes)
+    .where(and(eq(notes.id, noteId), isNull(notes.deletedAt)))
+    .limit(1);
+
+  if (!note) throw new Error("Note not found");
+
+  const ctx = await buildContext(user.id, note.orgId);
+
+  return withContext(ctx, async () => {
+    await requireOrgAccess(note.orgId, "member");
+
+    // Verify the user can read the note (parent-resolves-permission).
+    // canEditNote is not required; read access is sufficient to generate a summary.
+    // We use the admin client in requireOrgAccess above which confirms membership.
+    // For private notes, check the note_shares or authorship:
+    // The canEditNote checks authorship + shares; we need canReadNote equivalent.
+    // Implement an inline check via admin client.
+    const { getAdminSupabase } = await import("@/lib/auth/server");
+    const admin = getAdminSupabase();
+    const { data: noteAccess } = await admin
+      .from("notes")
+      .select("id, visibility, author_id")
+      .eq("id", noteId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (!noteAccess) throw new Error("Note not found");
+
+    // Check read access: visibility org/public_in_org, author, or share recipient.
+    if (
+      noteAccess.visibility === "private" &&
+      noteAccess.author_id !== user.id
+    ) {
+      const { data: share } = await admin
+        .from("note_shares")
+        .select("id")
+        .eq("note_id", noteId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!share) throw new Error("Forbidden");
+    }
+
+    // Fetch exactly one note's current version. (AGENTS.md item 5)
+    if (!note.currentVersionId) throw new Error("Note has no content yet");
+
+    const [version] = await db
+      .select({ title: noteVersions.title, content: noteVersions.content })
+      .from(noteVersions)
+      .where(eq(noteVersions.id, note.currentVersionId))
+      .limit(1);
+
+    if (!version) throw new Error("Note version not found");
+
+    const model = getModelId();
+    const client = getAnthropicClient();
+
+    const systemPrompt = `You are a note summarizer. Given a note's title and content, produce a structured JSON summary with these exact fields:
+{
+  "tldr": "<one-paragraph summary, max 500 chars>",
+  "key_points": ["<point>", ...],  // 1–8 items, each max 200 chars
+  "action_items": ["<action>", ...]  // 0–8 items, each max 200 chars
+}
+Return ONLY the JSON object. No markdown fences. No explanation.`;
+
+    const userMessage = `Title: ${version.title}\n\nContent:\n${version.content}`;
+
+    const message = await client.messages.create({
+      model,
+      max_tokens: 1024,
+      temperature: 0,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+    });
+
+    // Extract text content from the response.
+    const textBlock = message.content.find((b) => b.type === "text");
+    const rawText = textBlock?.type === "text" ? textBlock.text : "";
+
+    // Parse and validate. (AGENTS.md item 6)
+    let parsed: ReturnType<typeof summaryOutputSchema.safeParse>;
+    try {
+      const json: unknown = JSON.parse(rawText);
+      parsed = summaryOutputSchema.safeParse(json);
+    } catch {
+      await logAudit({
+        action: "ai.summarize.request",
+        resourceType: "ai_summaries",
+        metadata: { model, noteId, error: "json_parse_failed" },
+      });
+      throw new AiOutputInvalidError("response was not valid JSON");
+    }
+
+    if (!parsed.success) {
+      await logAudit({
+        action: "ai.summarize.request",
+        resourceType: "ai_summaries",
+        metadata: { model, noteId, error: "schema_validation_failed" },
+      });
+      throw new AiOutputInvalidError(parsed.error.message);
+    }
+
+    const data = parsed.data;
+
+    // Insert the draft summary row.
+    const [inserted] = await db
+      .insert(aiSummaries)
+      .values({
+        noteId,
+        orgId: note.orgId,
+        authorId: user.id,
+        model,
+        draftTldr: data.tldr,
+        draftKeyPoints: data.key_points,
+        draftActionItems: data.action_items,
+        status: "draft",
+      })
+      .returning({ id: aiSummaries.id });
+
+    if (!inserted) throw new Error("Failed to insert summary");
+
+    await logAudit({
+      action: "ai.summarize.request",
+      resourceType: "ai_summaries",
+      resourceId: inserted.id,
+      metadata: { model, noteId },
+      // No prompt, no raw output per AGENTS.md section 11.
+    });
+
+    return inserted.id;
+  });
+}
+
+// acceptSummary: copy selected draft fields to accepted fields.
+// Partial accept: pass { tldr: true } to accept only the TLDR, leaving
+// key_points and action_items unchanged.
+export async function acceptSummary(
+  summaryId: string,
+  input: AcceptSummaryInput,
+): Promise<void> {
+  const parsed = acceptSummaryInput.safeParse(input);
+  if (!parsed.success) throw new Error("Invalid input");
+
+  const user = await requireUser();
+  const db = getDb();
+
+  // Fetch the summary row via admin to get the note_id for auth.
+  const { getAdminSupabase } = await import("@/lib/auth/server");
+  const admin = getAdminSupabase();
+  const { data: summary } = await admin
+    .from("ai_summaries")
+    .select("id, note_id, org_id, draft_tldr, draft_key_points, draft_action_items, accepted_tldr, accepted_key_points, accepted_action_items")
+    .eq("id", summaryId)
+    .maybeSingle();
+
+  if (!summary) throw new Error("Summary not found");
+
+  const ctx = await buildContext(user.id, summary.org_id);
+
+  await withContext(ctx, async () => {
+    await requireOrgAccess(summary.org_id, "member");
+
+    const canEdit = await canEditNote(summary.note_id, user.id);
+    if (!canEdit) throw new Error("Forbidden");
+
+    const { tldr, keyPoints, actionItems } = parsed.data;
+    const acceptedFields: string[] = [];
+
+    if (tldr) acceptedFields.push("tldr");
+    if (keyPoints) acceptedFields.push("keyPoints");
+    if (actionItems) acceptedFields.push("actionItems");
+
+    // Determine status: all three accepted = 'accepted', subset = 'partial'.
+    const allThreeAccepted =
+      (tldr || summary.accepted_tldr !== null) &&
+      (keyPoints || summary.accepted_key_points !== null) &&
+      (actionItems || summary.accepted_action_items !== null);
+
+    const newStatus = allThreeAccepted ? "accepted" : "partial";
+
+    await db
+      .update(aiSummaries)
+      .set({
+        ...(tldr ? { acceptedTldr: summary.draft_tldr } : {}),
+        ...(keyPoints ? { acceptedKeyPoints: summary.draft_key_points as string[] } : {}),
+        ...(actionItems ? { acceptedActionItems: summary.draft_action_items as string[] } : {}),
+        status: newStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(aiSummaries.id, summaryId));
+
+    await logAudit({
+      action: "ai.summarize.accept",
+      resourceType: "ai_summaries",
+      resourceId: summaryId,
+      metadata: { fields: acceptedFields, noteId: summary.note_id },
+    });
+  });
+}
+
+// rejectSummary: mark the draft as rejected and null out draft fields.
+export async function rejectSummary(summaryId: string): Promise<void> {
+  const user = await requireUser();
+
+  const { getAdminSupabase } = await import("@/lib/auth/server");
+  const admin = getAdminSupabase();
+  const { data: summary } = await admin
+    .from("ai_summaries")
+    .select("id, note_id, org_id")
+    .eq("id", summaryId)
+    .maybeSingle();
+
+  if (!summary) throw new Error("Summary not found");
+
+  const ctx = await buildContext(user.id, summary.org_id);
+
+  await withContext(ctx, async () => {
+    await requireOrgAccess(summary.org_id, "member");
+
+    const canEdit = await canEditNote(summary.note_id, user.id);
+    if (!canEdit) throw new Error("Forbidden");
+
+    const db = getDb();
+    await db
+      .update(aiSummaries)
+      .set({
+        status: "rejected",
+        draftTldr: null,
+        draftKeyPoints: null,
+        draftActionItems: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(aiSummaries.id, summaryId));
+
+    await logAudit({
+      action: "ai.summarize.reject",
+      resourceType: "ai_summaries",
+      resourceId: summaryId,
+      metadata: { noteId: summary.note_id },
+    });
+  });
+}
+
+// getLatestSummary: fetch the most recent summary for a note (for the UI).
+export async function getLatestSummary(noteId: string) {
+  const user = await requireUser();
+  const db = getDb();
+
+  const [note] = await db
+    .select({ orgId: notes.orgId, deletedAt: notes.deletedAt })
+    .from(notes)
+    .where(and(eq(notes.id, noteId), isNull(notes.deletedAt)))
+    .limit(1);
+
+  if (!note) return null;
+
+  const ctx = await buildContext(user.id, note.orgId);
+
+  return withContext(ctx, async () => {
+    await requireOrgAccess(note.orgId, "viewer");
+
+    const [summary] = await db
+      .select()
+      .from(aiSummaries)
+      .where(eq(aiSummaries.noteId, noteId))
+      .orderBy(desc(aiSummaries.createdAt))
+      .limit(1);
+
+    return summary ?? null;
+  });
+}
