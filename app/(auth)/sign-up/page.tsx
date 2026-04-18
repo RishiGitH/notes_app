@@ -6,27 +6,29 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { loginAction } from "@/lib/auth/actions";
+import { signUpAction } from "@/lib/auth/actions";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? "Signing in…" : "Sign in"}
+      {pending ? "Creating account…" : "Create account"}
     </Button>
   );
 }
 
-export default function LoginPage() {
-  const [error, formAction] = useActionState(loginAction, null);
+export default function SignUpPage() {
+  const [error, formAction] = useActionState(signUpAction, null);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background">
       <div className="w-full max-w-sm space-y-6 px-4">
         <div className="space-y-1 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Create account
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Enter your email and password
+            Sign up with your email and password
           </p>
         </div>
 
@@ -49,9 +51,9 @@ export default function LoginPage() {
               id="password"
               name="password"
               type="password"
-              autoComplete="current-password"
+              autoComplete="new-password"
               required
-              placeholder="••••••••"
+              placeholder="Min. 8 characters"
             />
           </div>
 
@@ -65,9 +67,9 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-sm text-muted-foreground">
-          No account?{" "}
-          <Link href="/sign-up" className="underline underline-offset-4">
-            Sign up
+          Already have an account?{" "}
+          <Link href="/login" className="underline underline-offset-4">
+            Sign in
           </Link>
         </p>
       </div>
