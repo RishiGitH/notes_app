@@ -43,6 +43,27 @@
       "when": 1776540447996,
       "tag": "0005_absurd_tempest",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776541000000,
+      "tag": "0006_notes_org_immutable",
+      "breakpoints": false
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776541100000,
+      "tag": "0007_immutable_tenant_keys",
+      "breakpoints": false
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776600000000,
+      "tag": "0008_notes_fts",
+      "breakpoints": false
     }
   ]
 }
