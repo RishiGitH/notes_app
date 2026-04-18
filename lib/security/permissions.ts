@@ -14,6 +14,10 @@
 import { requireUser } from "@/lib/auth/server";
 import { getAdminSupabase } from "@/lib/auth/server";
 import { logAudit } from "@/lib/logging/audit";
+import {
+  getRequestContext,
+  withContext,
+} from "@/lib/logging/request-context";
 
 // Role ordering: higher index = higher privilege.
 export const ROLE_ORDER = {
@@ -60,16 +64,30 @@ export async function requireOrgAccess(
     .maybeSingle();
 
   if (error || !data || !roleAtLeast(data.role, minRole)) {
-    await logAudit({
-      action: "permission.denied",
-      resourceType: "org",
-      resourceId: orgId,
-      metadata: {
-        requiredRole: minRole,
-        actualRole: data?.role ?? null,
-        reason: error ? "db_error" : !data ? "not_member" : "insufficient_role",
-      },
-    });
+    // Force the calling user's id into the request context before logging.
+    // requireOrgAccess is called from many places; if any caller forgets to
+    // wrap in withContext, the permission.denied row would otherwise land
+    // with actor_id = null (logAudit reads userId from AsyncLocalStorage)
+    // and the denial becomes un-attributable, defeating forensic review.
+    const existing = getRequestContext();
+    await withContext(
+      { ...existing, orgId, userId: existing.userId ?? user.id },
+      () =>
+        logAudit({
+          action: "permission.denied",
+          resourceType: "org",
+          resourceId: orgId,
+          metadata: {
+            requiredRole: minRole,
+            actualRole: data?.role ?? null,
+            reason: error
+              ? "db_error"
+              : !data
+                ? "not_member"
+                : "insufficient_role",
+          },
+        }),
+    );
     throw new Error("Forbidden");
   }
 

@@ -73,7 +73,11 @@ export async function loginAction(
       action: error ? "auth.login.failed" : "auth.login",
       resourceType: "user",
       resourceId: data?.user?.id,
-      metadata: { email: parsed.data.email, error: error?.message },
+      // Never write the submitted email into audit metadata: audit_logs is
+      // retained indefinitely and readable by ops/analytics paths, and a
+      // failed-login row with an email is an enumeration oracle. Keep the
+      // error message only. (AGENTS.md section 2 item 11, section 8.)
+      metadata: { error: error?.message },
     }),
   );
 
@@ -113,7 +117,8 @@ export async function signUpAction(
       logAudit({
         action: "auth.signup.failed",
         resourceType: "user",
-        metadata: { email: parsed.data.email, error: error.message },
+        // No email in metadata — see loginAction for rationale.
+        metadata: { error: error.message },
       }),
     );
     return error.message;
@@ -134,7 +139,9 @@ export async function signUpAction(
       action: "auth.signup",
       resourceType: "user",
       resourceId: user.id,
-      metadata: { email: user.email },
+      // user.id is already captured on resourceId/actor_id. Don't duplicate
+      // the email in metadata.
+      metadata: {},
     }),
   );
 

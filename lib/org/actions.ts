@@ -171,6 +171,14 @@ export async function addMemberAction(
 
   const admin = getAdminSupabase();
 
+  // Generic "can't add" message used for every non-success branch below.
+  // Distinct messages ("User not found" vs "already a member" vs DB errors)
+  // would let any admin enumerate the user table by probing candidate
+  // emails and reading the response. Same text for every failure mode; the
+  // details only go to the audit log (without the email itself, so we
+  // don't turn the log into an enumeration oracle either).
+  const genericError = "Unable to add member. Check the email and try again.";
+
   // Look up the target user by email.
   const { data: targetUser } = await admin
     .from("users")
@@ -179,7 +187,14 @@ export async function addMemberAction(
     .maybeSingle();
 
   if (!targetUser) {
-    return "User not found. They must sign up first.";
+    await withContext(ctx, () =>
+      logAudit({
+        action: "member.add.failed",
+        resourceType: "membership",
+        metadata: { reason: "user_not_found" },
+      }),
+    );
+    return genericError;
   }
 
   // Check if already a member.
@@ -190,7 +205,16 @@ export async function addMemberAction(
     .eq("org_id", orgId)
     .maybeSingle();
 
-  if (existing) return "User is already a member of this organization";
+  if (existing) {
+    await withContext(ctx, () =>
+      logAudit({
+        action: "member.add.failed",
+        resourceType: "membership",
+        metadata: { reason: "already_member", targetUserId: targetUser.id },
+      }),
+    );
+    return genericError;
+  }
 
   const { error } = await admin.from("memberships").insert({
     user_id: targetUser.id,
@@ -198,17 +222,27 @@ export async function addMemberAction(
     role: parsed.data.role,
   });
 
-  if (error) return error.message;
+  if (error) {
+    await withContext(ctx, () =>
+      logAudit({
+        action: "member.add.failed",
+        resourceType: "membership",
+        metadata: { reason: "db_error" },
+      }),
+    );
+    return genericError;
+  }
 
   await withContext(ctx, () =>
     logAudit({
       action: "member.add",
       resourceType: "membership",
+      // orgId is already on the audit row's org_id column; targetEmail is
+      // PII and must not be written to audit_logs (AGENTS.md section 2
+      // item 11). targetUserId + role is sufficient attribution.
       metadata: {
         targetUserId: targetUser.id,
-        targetEmail: parsed.data.email,
         role: parsed.data.role,
-        orgId,
       },
     }),
   );

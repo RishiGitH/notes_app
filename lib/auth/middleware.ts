@@ -36,7 +36,13 @@ export async function updateSession(request: NextRequest) {
   const publishable = process.env.SUPABASE_PUBLISHABLE_KEY;
 
   // Clone the request headers so we can inject x-request-id and x-org-id.
+  // IMPORTANT: strip any client-supplied values for the trust-boundary
+  // headers we mint server-side. Without the explicit delete, an attacker
+  // who clears the org_id cookie can smuggle x-org-id via a request header
+  // and have it forwarded verbatim to Server Components.
   const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete("x-request-id");
+  requestHeaders.delete("x-org-id");
   requestHeaders.set("x-request-id", requestId);
 
   // Propagate current-org from the org_id cookie to a request header.

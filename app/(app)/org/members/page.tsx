@@ -4,6 +4,8 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { requireUser, getAdminSupabase } from "@/lib/auth/server";
+import { requireOrgAccess } from "@/lib/security/permissions";
+import { withContext } from "@/lib/logging/request-context";
 import { AddMemberForm } from "./add-member-form";
 
 export default async function MembersPage() {
@@ -18,6 +20,18 @@ export default async function MembersPage() {
   const orgId = h.get("x-org-id");
   if (!orgId) redirect("/org/create");
 
+  // Authoritative server-side gate: verify the caller is a member of orgId
+  // before any tenant-scoped DB read. Throws on non-member (caught by the
+  // error boundary) and writes a permission.denied audit row. This closes
+  // the x-org-id header-smuggling / stale-cookie class of bugs: even if an
+  // attacker makes the header say a foreign org, this check rejects them
+  // before the admin query runs.
+  const requestId = h.get("x-request-id") ?? "unknown";
+  const membership = await withContext(
+    { requestId, orgId, userId: user.id },
+    () => requireOrgAccess(orgId, "viewer"),
+  );
+
   const admin = getAdminSupabase();
 
   // Fetch members with their user info.
@@ -27,11 +41,7 @@ export default async function MembersPage() {
     .eq("org_id", orgId)
     .order("created_at");
 
-  // Check if current user is admin or owner.
-  const currentMembership = memberships?.find((m) => m.user_id === user.id);
-  const isAdmin =
-    currentMembership?.role === "admin" ||
-    currentMembership?.role === "owner";
+  const isAdmin = membership.role === "admin" || membership.role === "owner";
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
