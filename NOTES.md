@@ -142,3 +142,25 @@ order, never delete.
 - `3336ec0` auth: implement login sign-up sign-out server actions and auth pages
 - `d096e8c` auth: add create-org page, org switcher, and member management server actions
 - `3d9d91d` test: add org-switch scope tenant isolation case 11
+
+## 2026-04-19 00:00 — search-ai — Phase 3C: FTS, file upload pipeline, AI summarizer
+
+Plan
+- Write lib/ai/schemas.ts (summaryOutputSchema zod) and lib/ai/summarize.ts (generateSummary, acceptSummary, rejectSummary Server Actions with audit logging).
+- Write lib/files/constants.ts, lib/files/sanitize.ts, lib/files/actions.ts (uploadNoteFile with byte-sniffed MIME via file-type; download proxy route that re-auths before issuing signed URL).
+- Write lib/search/schemas.ts and lib/search/actions.ts (searchNotes using plainto_tsquery + explicit org_id WHERE clause per AGENTS.md section 2 item 10).
+- Add drizzle migration 0008_notes_fts.sql: search_tsv tsvector column maintained by trigger, GIN index partial on deleted_at IS NULL.
+- Extend tenant-isolation test 08 to cover tsvector FTS path; extend 05 for download proxy re-auth; add integration test for AI partial accept; add unit test for summary output schema.
+- Coordinate FTS schema change and Storage bucket RLS with lead-backend via request blocks below.
+
+## 2026-04-19 00:01 — search-ai — Request to lead-backend: FTS column + trigger migration
+
+Need: Add `search_tsv tsvector` column to `notes` table maintained by a trigger that fires on notes UPDATE and on note_versions INSERT (when inserted version becomes current_version_id). Migration file drizzle/0008_notes_fts.sql. English text-search config. GIN index partial on deleted_at IS NULL. Update lib/db/schema.ts to declare the column (customType or sql cast). Regenerate drizzle meta snapshot.
+Why: search-ai owns the searchNotes action but cannot author migrations to lib/db/schema.ts which lead-backend owns per PLAN.md section 3.
+Blocking: searchNotes action and tenant-isolation test 08 tsvector path (can implement action with sql cast in the interim; gate test needs the real column).
+
+## 2026-04-19 00:02 — search-ai — Request to lead-backend: Supabase Storage bucket + object RLS migration
+
+Need: Create private bucket `notes-files` in Supabase Storage. Object-level RLS policies: SELECT/INSERT allowed when split_part(name,'/',1)::uuid is an org the caller is a member of (use existing public.is_org_member helper) AND the notes row for split_part(name,'/',2)::uuid is not soft-deleted. DELETE allowed for uploader or org admin. Use public.is_org_member and public.org_role helpers from 0001_rls_helpers.sql. Migration file drizzle/0009_storage_rls.sql.
+Why: Storage bucket and its RLS must be consistent with Postgres RLS helpers that lead-backend owns.
+Blocking: file upload download proxy (uploadNoteFile can insert the DB row; the Storage object upload via service role bypasses bucket RLS so the row-level SQL isolation is the primary gate until Storage RLS lands).
