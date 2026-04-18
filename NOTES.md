@@ -157,3 +157,16 @@ order, never delete.
 
 **Exit gate (PLAN.md Phase 3 merge into main):** tenant-isolation green; pnpm typecheck and lint clean.
 **Gate command:** `pnpm test:tenant-isolation && pnpm typecheck && pnpm lint`
+
+**Result:**
+- Created lib/notes/actions.ts: createNoteAction (inserts note + first version snapshot, documents slim window before current_version_id is set), listNotesAction (user-scoped client so RLS applies), getNoteAction (user-scoped client + canEditNote flag in response), softDeleteNoteAction (requireOrgAccess member + canEditNote), restoreNoteAction (requireOrgAccess admin), saveNoteAction (optimistic concurrency via expectedVersionNumber — returns { conflict: true } if stale, never overwrites silently; full snapshot per save), changeVisibilityAction (validates enum, logs from/to), listVersionsAction and getVersionAction (both use user-scoped client, no content in audit logs — version number and IDs only).
+- Created lib/notes/tag-actions.ts: createTagAction, listTagsAction (user-scoped), addTagToNoteAction (requireOrgAccess member + canEditNote + cross-org tag guard: tag.org_id must equal note.org_id), removeTagFromNoteAction.
+- Created lib/notes/share-actions.ts: grantShareAction (upsert on conflict; confirms target is an org member before granting), revokeShareAction, listSharesAction. All use canManageShares (author or admin). No email in audit metadata.
+- Tests 12-15 written before any UI wiring per plan: 12 (view-share cannot UPDATE via RLS), 13 (non-author/non-admin INSERT note_shares blocked), 14 (soft-deleted parent hides note_versions for author and member), 15 (cross-org note_tags INSERT blocked by RLS; cross-org tag application documented as application-layer guard).
+- Gate: 26/26 tenant-isolation tests green, pnpm typecheck and pnpm lint clean.
+- Decisions: list/get actions intentionally use user-scoped client (RLS as second gate); write actions use admin client after server-side gate runs. canEditNote is called after requireOrgAccess on all write paths. No note content ever written to audit_logs.
+
+**Commits:**
+- `992ac0f` notes: add note CRUD server actions, create list get soft-delete restore and versioning
+- `e282283` notes: add tag and share server actions with org-scoped gates
+- `70d280c` test: add phase 3A tenant isolation cases 12 through 15
