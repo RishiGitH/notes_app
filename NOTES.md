@@ -71,3 +71,28 @@ timestamp order, never delete.
 
 **Exit gate (PLAN.md Phase 1):** `pnpm test:tenant-isolation` green; schema-reviewer clean.
 **Gate commands:** `pnpm supabase:start && pnpm db:generate && pnpm db:migrate && pnpm test:tenant-isolation && pnpm typecheck && pnpm lint`.
+
+**Result:**
+- Declared all 11 tables in lib/db/schema.ts per PLAN.md section 2 with org_id NOT NULL on every tenant-scoped table. Enums: role_enum, visibility_enum, share_permission_enum. Partial indexes on `deleted_at IS NULL` for the notes list path. No tsvector/GIN in Phase 1: FTS is Phase 3C; carrying a dead column+index deferred to DEFERRED.md.
+- Added is_org_member(org) and org_role(org) as SECURITY DEFINER STABLE SQL functions in a hand-written migration (0001_rls_helpers.sql) because drizzle-kit cannot generate function DDL. Pinned search_path = public to close function-hijacking path.
+- Enabled RLS on all 11 tables. Declared USING + WITH CHECK for every verb via pgPolicy(). Child-of-notes tables (note_versions, note_shares, note_tags, files, ai_summaries) resolve authorization by EXISTS-joining the current parent notes row (deleted_at IS NULL, is_org_member, current visibility/share/role). note_versions is immutable: SELECT + INSERT only.
+- Discovered and fixed circular RLS recursion: notes SELECT checked note_shares, note_shares SELECT checked notes. Fixed by simplifying note_shares SELECT policy to `user_id = auth.uid()`. Author/admin reads of all shares go through service role on admin server paths. Documented in schema.ts comment.
+- Added missing tags UPDATE policy (schema-reviewer finding: medium). Admin-only rename, matching existing delete policy.
+- supabase init run; config.toml committed with site_url=localhost:3000 and db.seed.enabled=false. Migrations applied to local Supabase stack on port 54322.
+- JWT-claim impersonation test harness: asUser() sets role=authenticated + request.jwt.claim.sub; asAdmin() bypasses RLS for fixture setup. Fixed Vitest pool from default (concurrent forks) to pool='forks' maxForks=1 so test files run sequentially and beforeAll/afterAll don't interfere across files.
+- globalSetup.ts guards against non-localhost DIRECT_URL and applies db:migrate idempotently before any test file runs.
+- Seeded two orgs + three users directly into auth.users + public.users (auth trigger is Phase 2). Fixed truncateAll to omit RESTART IDENTITY (auth schema sequences are owned by supabase system user, not postgres).
+- All 10 Tier-1 test cases pass (17 assertions). pnpm typecheck and pnpm lint clean.
+- Decisions: notes.current_version_id has no DDL FK (chicken-and-egg resolved at application layer, flagged in commit message and schema comment). files.note_id uses ON DELETE RESTRICT (storage object must be cleaned before file row can be removed). note_shares SELECT policy intentionally simplified to break RLS recursion cycle.
+- Schema-reviewer invoked; 0 critical, 0 must-fix. tags UPDATE policy gap (medium) fixed before closing. note_versions.org_id and ai_summaries.org_id denormalization without a DDL FK to organizations is noted as an acceptable trade-off and recorded in .reports/schema/.
+
+**Commits:**
+- `89475bf` db: add drizzle schema for users organizations memberships, install enums for role visibility share
+- `f63f0cb` db: add notes note_versions note_shares tags note_tags tables, core note graph
+- `8dd57c7` db: add files ai_summaries audit_logs tables, complete phase 1 schema
+- `80ff094` security: add is_org_member and org_role sql helpers, centralize membership lookup for rls
+- `a08cb4b` security: enable rls on all tables with using and with check policies, ground truth tenant isolation
+- `eeec50b` test: add tenant isolation harness with asUser impersonation and two-org fixture, ground-truth test rig
+- `f4d21df` test: add tier 1 tenant isolation cases 1 through 10, gate multi-tenant correctness
+- `db0f949` security: fix infinite rls recursion on note_shares, simplify select policy to user_id = auth.uid()
+- `2c92c06` security: add tags update policy for org admins, close schema-reviewer gap
