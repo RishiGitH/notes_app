@@ -156,3 +156,26 @@ Plan
 - Write scripts/perf-search.ts: autocannon, 10 connections, 30s, GET /search?q=<term> with auth cookie from PERF_COOKIE env or @supabase/supabase-js sign-in; prints p50/p95/p99.
 - NOTE: /search route is owned by search-ai (feat/infra); perf harness will 404 until that merges — shipped anyway as specified.
 - Commit order: C1 Dockerfile+.dockerignore, C2 railway.json, C3 deps, C4 seed.ts, C5 perf-search.ts; C6 NOTES.md Result.
+
+Result
+- Created Dockerfile (multi-stage node:20-alpine: deps/builder/runner). Standalone output copied correctly: .next/standalone as root, .next/static and public/ added manually (Next does not bundle them). Non-root node user (uid 1000, pre-built in alpine). HOSTNAME=0.0.0.0 env var is critical -- without it Railway's proxy cannot reach the server. HEALTHCHECK uses Node 20 built-in fetch.
+- Created .dockerignore to exclude .git, .next, node_modules, .env*, tests, .claude, .reports, *.md from build context.
+- Created railway.json: DOCKERFILE builder, /api/health healthcheck, ON_FAILURE restart with 10 retries.
+- Left .env.example unchanged per AGENTS.md §1. PORT and NODE_ENV are baked into the Dockerfile as operational defaults, not runtime config.
+- Health route (app/api/health/route.ts) was already correct: runtime=nodejs, force-dynamic, {ok:true}. Middleware matcher already excluded /api/health. No changes needed.
+- Added devDeps: @faker-js/faker, tsx, autocannon, @types/autocannon, dotenv. Added seed/seed:small/perf:search scripts. Added engines (node>=20) and packageManager (pnpm@10.33.0).
+- Wrote scripts/seed.ts: 5 orgs, 20 users, 10k/1k notes, 500/50 versioned notes (3-5 versions), 50 files rows (path-only, no Storage upload), 30 shares, 5 tags/org + note_tags. Batched inserts at chunk 500. ON CONFLICT DO NOTHING (idempotent). faker.seed(42) (deterministic). Both auth.users and public.users seeded (auth trigger deferred).
+- Chicken-and-egg for current_version_id: omit column from INSERT (defaults to NULL), insert versions, then run per-note UPDATE. postgres.js sql() helper doesn't accept null in VALUES arrays; used column omission instead.
+- Wrote scripts/perf-search.ts: autocannon, 10 connections, 30s, GET /search?q=<term>. Cookie from PERF_COOKIE env or auto-obtained via supabase-js sign-in. Note: /search route (search-ai, feat/infra) doesn't exist yet on this branch; harness returns 404 until that merges.
+- typecheck and lint clean on all deliverables.
+
+Blockers / pivots
+- postgres.js sql() VALUES helper (EscapableArray) does not accept Date or null in its array parameter type. Fixed by converting all dates to ISO strings (iso()/now() helpers) and omitting nullable-with-null-intent columns from INSERT column lists, relying on DB defaults.
+- Per-note UPDATE for current_version_id: originally planned a FROM-VALUES batch update but nested sql`` in arrays is not supported by postgres.js. Switched to individual UPDATE per note per batch, which is simpler and correct.
+
+Commits
+- `a3bdfab` deploy: add multi-stage Dockerfile and .dockerignore, standalone runtime for Railway
+- `037d4ff` deploy: add railway.json with Docker builder and health check path
+- `7cc3e54` deps: add seed and perf tooling (tsx, faker, autocannon, dotenv)
+- `e9ba0dc` scripts: add seed.ts with 10k-note generator and --small flag
+- `8031fc5` scripts: add perf-search.ts autocannon harness for /search path
