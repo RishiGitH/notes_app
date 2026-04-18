@@ -112,101 +112,16 @@ if session is expired or tampered it will be caught immediately.
 ---
 
 
-## Any logged-in user could read any org's member list by sending a fake header
-
-**crit** — fix `f54ad9d`
-
-
-Two bugs that chained into the same leak.
-
-First, middleware did `new Headers(request.headers)` which copies every
-header the browser sent, including `x-org-id`. It only overwrote that
-header when the `org_id` cookie was present. So if the attacker cleared
-the cookie and sent `X-Org-Id: <victim-org-uuid>` themselves, the
-header survived and got forwarded to Server Components as if we had
-set it.
-
-Second, `/org/members` read `x-org-id` straight out of the headers and
-queried memberships with the service-role client — no `requireOrgAccess`
-call, so nothing actually checked the caller was in the org. Any
-authenticated user could dump any org's member roster (emails, roles,
-user ids) just by knowing the org UUID.
-
-Fixed both. Middleware now explicitly `delete`s `x-org-id` and
-`x-request-id` before the conditional set, so client-supplied values
-can never survive. And the members page now calls
-`requireOrgAccess(orgId, "viewer")` before any DB work, which throws
-and writes a permission.denied audit row on non-members. Defense in
-depth: either fix alone would have stopped the leak.
-
-
----
-
-
-## Email addresses were being written to the audit log on every login and signup
+## addmember action leaked whether a user was registered or not
 
 **med** — fix `f54ad9d`
 
 
-AGENTS.md section 2 rule 11 says logs must not contain PII beyond user
-id + org id + action. But `loginAction`, `signUpAction`, and
-`addMemberAction` were all stuffing the submitted email into
-`audit_logs.metadata`. Failed logins were the worst case: they recorded
-emails for accounts that may not even exist, turning the audit log
-itself into an email-enumeration dump for anyone who later gets read
-access to that table.
+using addmember action and anyone can brute force and find out which emails are registered. The response told whether the user was registered or not and if they were already a member or not. 
 
-Removed `email` from the metadata on all three paths. The user id is
-already on `actor_id` / `resourceId` so attribution is not lost. For
-`addMemberAction` the target user id is kept in metadata but the target
-email is dropped.
-
+Update the response to a genric error message and fixed it.
 
 ---
-
-
-## addMember returned different error messages that leaked whether an email was registered
-
-**med** — fix `f54ad9d`
-
-
-`addMemberAction` replied with "User not found. They must sign up
-first." when the email was unknown and "User is already a member..."
-when it was already in the org. Any admin of any org (and everyone
-who signs up gets one) could script this action against a list of
-candidate emails and learn which belong to real users — a textbook
-email-enumeration oracle that defeats the user table's RLS policy.
-
-Collapsed every failure branch to one generic message: "Unable to add
-member. Check the email and try again." The real reason goes to
-`audit_logs` as a `member.add.failed` row with a `reason` code, so ops
-can still see what happened without shipping the detail to the caller.
-
-
----
-
-
-## Permission-denied audit rows could be written with no actor_id attached
-
-**med** — fix `f54ad9d`
-
-
-`requireOrgAccess` called `logAudit` directly on denial, but `logAudit`
-reads the user id out of the AsyncLocalStorage request context — not
-from the `user` object `requireOrgAccess` had just loaded. If any
-caller forgot to wrap the call in `withContext`, the `permission.denied`
-row would land with `actor_id = null` and the denial became
-un-attributable. Ops running `SELECT ... WHERE actor_id = '<attacker>'`
-to trace probing would get zero rows.
-
-Wrapped the `logAudit` call inside `requireOrgAccess` with its own
-`withContext` that threads through the looked-up user id as a fallback,
-so the denial is always attributable even when the caller was sloppy
-about establishing context.
-
-
----
-
 
 
 
