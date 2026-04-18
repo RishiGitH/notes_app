@@ -9,8 +9,10 @@
 // the security invariants every policy exists to enforce.
 
 import {
+  bigint,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -258,5 +260,112 @@ export const noteTags = pgTable(
   (t) => ({
     pk: primaryKey({ columns: [t.noteId, t.tagId] }),
     byTag: index("note_tags_tag_idx").on(t.tagId),
+  }),
+);
+
+// ----- files ---------------------------------------------------------------
+//
+// org_id FK uses RESTRICT: org rows should not be dropped while files exist
+// (storage cleanup must happen first). Same rationale for note_id RESTRICT:
+// notes are soft-deleted, not hard-deleted; an explicit purge job must clean
+// storage objects before the file row can be removed.
+//
+// path is server-built as <org_id>/<note_id>/<random>; never derived from
+// client-supplied filenames (AGENTS.md section 2 item 9).
+
+export const files = pgTable(
+  "files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    noteId: uuid("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "restrict" }),
+    uploaderId: uuid("uploader_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    path: text("path").notNull(),
+    mime: text("mime").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pathUnique: uniqueIndex("files_path_uq").on(t.path),
+    orgNote: index("files_org_note_idx").on(t.orgId, t.noteId),
+    byNote: index("files_note_idx").on(t.noteId),
+  }),
+);
+
+// ----- ai_summaries --------------------------------------------------------
+
+export const aiSummaries = pgTable(
+  "ai_summaries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    noteId: uuid("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    orgId: uuid("org_id").notNull(),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    model: text("model").notNull(),
+    draftTldr: text("draft_tldr"),
+    draftKeyPoints: jsonb("draft_key_points"),
+    draftActionItems: jsonb("draft_action_items"),
+    acceptedTldr: text("accepted_tldr"),
+    acceptedKeyPoints: jsonb("accepted_key_points"),
+    acceptedActionItems: jsonb("accepted_action_items"),
+    status: text("status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    byNoteDate: index("ai_summaries_note_date_idx").on(
+      t.noteId,
+      t.createdAt.desc(),
+    ),
+  }),
+);
+
+// ----- audit_logs ----------------------------------------------------------
+//
+// Append-only; no updatedAt. actor_id and org_id are nullable to accommodate
+// system events (no actor) and pre-org-selection auth events (no org).
+// resource_id is text, not uuid, to accommodate storage object keys.
+//
+// RLS: INSERT-only for the authenticated role; reads go through the service
+// role (secret key) on admin paths not shipped until a later phase.
+
+export const auditLogs = pgTable(
+  "audit_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id"),
+    orgId: uuid("org_id"),
+    action: text("action").notNull(),
+    resourceType: text("resource_type").notNull(),
+    resourceId: text("resource_id"),
+    requestId: text("request_id").notNull(),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    orgDate: index("audit_logs_org_date_idx").on(t.orgId, t.createdAt.desc()),
+    actorDate: index("audit_logs_actor_date_idx").on(
+      t.actorId,
+      t.createdAt.desc(),
+    ),
+    byRequest: index("audit_logs_request_idx").on(t.requestId),
   }),
 );
