@@ -55,7 +55,8 @@ per section 5). When in doubt, rules in `AGENTS.md` beat anything else.
 | Variable | Visibility | Value locally | Value in production |
 |---|---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Public | Supabase project URL | same |
-| `SUPABASE_PUBLISHABLE_KEY` | Public (client-safe) | Legacy anon JWT | `sb_publishable_...` |
+| `SUPABASE_PUBLISHABLE_KEY` | Server-only (SSR) | Legacy anon JWT | `sb_publishable_...` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public (browser) | Same value as above | same |
 | `SUPABASE_SECRET_KEY` | **Server-only** | Legacy service_role JWT | `sb_secret_...` |
 | `DATABASE_URL` | Server-only | Pooler URL (port 6543) | same |
 | `DIRECT_URL` | Server-only | Direct URL (port 5432) | same |
