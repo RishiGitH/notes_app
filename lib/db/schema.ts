@@ -22,6 +22,7 @@
 
 import {
   bigint,
+  customType,
   index,
   integer,
   jsonb,
@@ -35,6 +36,16 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+// tsvector is a Postgres-native type not natively exposed by drizzle-orm.
+// We declare it as a custom type so it can be used in schema declarations and
+// query expressions. The Drizzle type system treats it as opaque text at the
+// TypeScript layer; actual tsvector values are built by SQL expressions only.
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 // ----- Enums ---------------------------------------------------------------
 
@@ -246,6 +257,11 @@ export const notes = pgTable(
     currentVersionId: uuid("current_version_id"),
     visibility: visibilityEnum("visibility").notNull().default("private"),
     title: text("title").notNull().default(""),
+    // search_tsv is maintained by the notes_fts_update trigger (migration 0008).
+    // Default is empty tsvector; the trigger populates it when current_version_id
+    // is set. Declared here so Drizzle queries can reference the column via
+    // notes.searchTsv in FTS WHERE clauses.
+    searchTsv: tsvector("search_tsv").notNull().default(sql`''::tsvector`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
