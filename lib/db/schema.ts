@@ -444,19 +444,12 @@ export const noteShares = pgTable(
       as: "permissive",
       for: "select",
       to: "authenticated",
-      using: sql`
-        exists (
-          select 1 from public.notes n
-          where n.id = note_shares.note_id
-            and n.deleted_at is null
-            and public.is_org_member(n.org_id)
-            and (
-              n.author_id = auth.uid()
-              or public.org_role(n.org_id) in ('owner', 'admin')
-              or note_shares.user_id = auth.uid()
-            )
-        )
-      `,
+      // A user can always read their own share grants. Author and admin reads of
+      // all shares on a note go through the service role on admin server paths.
+      // This intentionally avoids referencing the notes table to break the
+      // circular RLS dependency: notes SELECT checks note_shares, so note_shares
+      // SELECT must not check notes (infinite recursion).
+      using: sql`user_id = auth.uid()`,
     }),
     insertPolicy: pgPolicy("note_shares_insert_author_or_admin", {
       as: "permissive",

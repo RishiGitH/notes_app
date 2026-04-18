@@ -1,0 +1,1 @@
+ALTER POLICY "note_shares_select_via_parent" ON "note_shares" TO authenticated USING (user_id = auth.uid());

@@ -102,13 +102,18 @@ export async function seedTwoOrgs(): Promise<TestFixture> {
 
 /**
  * Truncate every public.* table (and auth.users) between test files.
- * RESTART IDENTITY CASCADE resets sequences and removes dependent rows.
+ * CASCADE removes dependent rows. We intentionally do NOT use RESTART IDENTITY
+ * because some auth schema sequences are owned by the supabase system user and
+ * cannot be reset by the postgres role. Our fixture uses fixed UUIDs, so
+ * sequence state is irrelevant.
+ *
  * The RLS policies, enums, and functions are NOT dropped — we keep them
  * across tests because that is exactly what we are testing.
  */
 export async function truncateAll(): Promise<void> {
   const { sql, release } = await asAdmin();
   try {
+    // Truncate public tables first (no identity reset needed — uuid PKs).
     await sql`
       truncate table
         public.audit_logs,
@@ -121,10 +126,12 @@ export async function truncateAll(): Promise<void> {
         public.tags,
         public.memberships,
         public.organizations,
-        public.users,
-        auth.users
-      restart identity cascade
+        public.users
+      cascade
     `;
+    // auth.users: truncate separately without RESTART IDENTITY (sequences are
+    // owned by supabase system user; postgres role cannot reset them).
+    await sql`truncate table auth.users cascade`;
   } finally {
     await release();
   }

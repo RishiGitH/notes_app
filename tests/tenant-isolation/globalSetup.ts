@@ -16,6 +16,7 @@
 
 import { execSync } from "node:child_process";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export async function setup(): Promise<void> {
   const directUrl = process.env.DIRECT_URL ?? "";
@@ -28,7 +29,12 @@ export async function setup(): Promise<void> {
     );
   }
 
-  const repoRoot = path.resolve(import.meta.dirname, "../../..");
+  // Resolve the repo root from this file's location:
+  // tests/tenant-isolation/globalSetup.ts -> ../../ = repo root
+  const thisFile = typeof __filename !== "undefined"
+    ? __filename
+    : fileURLToPath(import.meta.url);
+  const repoRoot = path.resolve(path.dirname(thisFile), "../..");
 
   console.log("[globalSetup] Applying Drizzle migrations…");
   try {

@@ -16,6 +16,16 @@ export default defineConfig({
     globalSetup: ["./tests/tenant-isolation/globalSetup.ts"],
     hookTimeout: 30_000,
     testTimeout: 15_000,
+    // Tenant-isolation tests share a real Postgres instance. Run files
+    // sequentially (pool: 'forks', maxForks: 1) so beforeAll/afterAll
+    // boundaries from different test files don't overlap.
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        maxForks: 1,
+        minForks: 1,
+      },
+    },
   },
   resolve: {
     alias: {
