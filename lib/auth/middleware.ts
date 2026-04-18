@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { ulid } from "ulid";
 
 // Public paths that do not require authentication. Everything else under
 // (app) is protected — unauthenticated requests are redirected to /login.
@@ -10,16 +11,47 @@ const PUBLIC_PATHS = [
 ];
 
 function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  return PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
 }
 
-// Refreshes the Supabase session on each request, propagates the refreshed
-// cookie, and redirects unauthenticated requests to /login for protected
-// routes. Phase 2 will add request-id minting and current-org attachment.
+// updateSession runs on every request that reaches middleware. It:
+//   1. Mints a ULID request-id and attaches it as x-request-id to both the
+//      request (so Server Components can read it via headers()) and the
+//      response (for observability / correlation in logs).
+//   2. Reads the current-org cookie ("org_id") and forwards its value as
+//      x-org-id on the request headers, so Server Components and Actions
+//      can read the current org cheaply without re-parsing cookies.
+//   3. Refreshes the Supabase session and redirects unauthenticated requests.
+//
+// AsyncLocalStorage is NOT used here: middleware may run on the edge runtime
+// where AsyncLocalStorage is unavailable. The ALS store is populated by the
+// withContext() wrapper in lib/logging/request-context.ts for Node-runtime
+// Server Actions that call logAudit().
 export async function updateSession(request: NextRequest) {
+  const requestId = ulid();
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const publishable = process.env.SUPABASE_PUBLISHABLE_KEY;
-  const response = NextResponse.next({ request });
+
+  // Clone the request headers so we can inject x-request-id and x-org-id.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+
+  // Propagate current-org from the org_id cookie to a request header.
+  const orgId = request.cookies.get("org_id")?.value;
+  if (orgId) {
+    requestHeaders.set("x-org-id", orgId);
+  }
+
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
+
+  // Always echo the request-id on the response so clients and edge logs
+  // can correlate the pair.
+  response.headers.set("x-request-id", requestId);
 
   if (!url || !publishable) return response;
 
@@ -28,7 +60,9 @@ export async function updateSession(request: NextRequest) {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+      setAll(
+        cookiesToSet: { name: string; value: string; options: CookieOptions }[],
+      ) {
         for (const { name, value, options } of cookiesToSet) {
           request.cookies.set(name, value);
           response.cookies.set(name, value, options);
