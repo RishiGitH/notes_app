@@ -401,10 +401,8 @@ corresponds to a named agent here. Agents not listed here are not used.
    candidate finding, writes a failing Vitest test that demonstrates
    it. If no failing test can be written, the claim is downgraded to
    a "suspicion" and does not enter `BUGS.md`. Callable via
-   `/verify-bug` or via `/triage` for batch verification. When writing
-   a confirmed entry into `BUGS.md`, read the format and existing
-   entries at the top of that file first and match the tone exactly —
-   plain English, no bullet lists, two short paragraphs per bug.
+   `/verify-bug` or via `/triage` for batch verification. Bug entries
+   in `BUGS.md` are written by the operator, not by this agent.
 9. **observability-reviewer** (Sonnet). Audits logging coverage:
    every mutation, auth event, permission denial, and AI call must
    produce a row in `audit_logs` with no PII / secret / content
