@@ -143,6 +143,36 @@ order, never delete.
 - `d096e8c` auth: add create-org page, org switcher, and member management server actions
 - `3d9d91d` test: add org-switch scope tenant isolation case 11
 
+## [2026-04-18T21:57:05Z] [lead-backend] Task: Phase 3A - Notes CRUD, versioning, tags, sharing
+
+**Plan:**
+- Create lib/notes/actions.ts: createNoteAction, listNotesAction, getNoteAction, softDeleteNoteAction, restoreNoteAction. All call requireOrgAccess before DB work. All wrapped with withContext + logAudit. No content in logs.
+- Create saveNoteAction with full versioning and optimistic concurrency: expectedVersionNumber must match fetched current version or return { conflict: true }. Insert new note_version snapshot, update current_version_id. Log note.save with version number only.
+- Create lib/notes/tag-actions.ts: createTagAction, listTagsAction, addTagToNoteAction, removeTagFromNoteAction. All gated by requireOrgAccess + canEditNote where applicable.
+- Create lib/notes/share-actions.ts: grantShareAction, revokeShareAction, listSharesAction. Author or admin gate enforced by canEditNote.
+- Add changeVisibilityAction: requireOrgAccess + canEditNote, validates against visibility enum, logs from/to.
+- Add listVersionsAction and getVersionAction: no content in logs.
+- Write tenant-isolation tests 12-15 BEFORE any UI wiring: 12 write isolation (view-only share cannot save), 13 share-grant isolation (non-author/admin cannot grant), 14 version access via soft-deleted parent, 15 tag isolation (cross-org blocked by canEditNote).
+- Commit budget: ~8-9 commits per AGENTS.md section 4.
+
+**Exit gate (PLAN.md Phase 3 merge into main):** tenant-isolation green; pnpm typecheck and lint clean.
+**Gate command:** `pnpm test:tenant-isolation && pnpm typecheck && pnpm lint`
+
+**Result:**
+- Created lib/notes/actions.ts: createNoteAction (inserts note + first version snapshot, documents slim window before current_version_id is set), listNotesAction (user-scoped client so RLS applies), getNoteAction (user-scoped client + canEditNote flag in response), softDeleteNoteAction (requireOrgAccess member + canEditNote), restoreNoteAction (requireOrgAccess admin), saveNoteAction (optimistic concurrency via expectedVersionNumber — returns { conflict: true } if stale, never overwrites silently; full snapshot per save), changeVisibilityAction (validates enum, logs from/to), listVersionsAction and getVersionAction (both use user-scoped client, no content in audit logs — version number and IDs only).
+- Created lib/notes/tag-actions.ts: createTagAction, listTagsAction (user-scoped), addTagToNoteAction (requireOrgAccess member + canEditNote + cross-org tag guard: tag.org_id must equal note.org_id), removeTagFromNoteAction.
+- Created lib/notes/share-actions.ts: grantShareAction (upsert on conflict; confirms target is an org member before granting), revokeShareAction, listSharesAction. All use canManageShares (author or admin). No email in audit metadata.
+- Tests 12-15 written before any UI wiring per plan: 12 (view-share cannot UPDATE via RLS), 13 (non-author/non-admin INSERT note_shares blocked), 14 (soft-deleted parent hides note_versions for author and member), 15 (cross-org note_tags INSERT blocked by RLS; cross-org tag application documented as application-layer guard).
+- Gate: 26/26 tenant-isolation tests green, pnpm typecheck and pnpm lint clean.
+- Decisions: list/get actions intentionally use user-scoped client (RLS as second gate); write actions use admin client after server-side gate runs. canEditNote is called after requireOrgAccess on all write paths. No note content ever written to audit_logs.
+
+**Commits:**
+- `5b68067` notes: start phase 3A, notes CRUD versioning tags sharing
+- `992ac0f` notes: add note CRUD server actions, create list get soft-delete restore and versioning
+- `e282283` notes: add tag and share server actions with org-scoped gates
+- `70d280c` test: add phase 3A tenant isolation cases 12 through 15
+- `56b1a6e` notes: record phase 3A result, auth and org switching complete
+
 ## 2026-04-19 — infra-deploy — Phase 3D: Dockerfile, railway.json, seed, perf harness
 
 Plan
@@ -154,7 +184,7 @@ Plan
 - Add devDeps (tsx, @faker-js/faker, autocannon, @types/autocannon, dotenv) and seed/seed:small/perf:search scripts plus engines + packageManager fields to package.json.
 - Write scripts/seed.ts: 5 orgs, 20 users, 10k notes (1k with --small), 500 versioned notes (3-5 versions each), 50 files rows (no Storage upload), ~30 shares, tags + note_tags; batched inserts (chunk 500); ON CONFLICT DO NOTHING; faker.seed(42); chicken-and-egg current_version_id resolved per batch (insert notes null, insert versions, UPDATE to latest version_id).
 - Write scripts/perf-search.ts: autocannon, 10 connections, 30s, GET /search?q=<term> with auth cookie from PERF_COOKIE env or @supabase/supabase-js sign-in; prints p50/p95/p99.
-- NOTE: /search route is owned by search-ai (feat/infra); perf harness will 404 until that merges — shipped anyway as specified.
+- NOTE: /search route is owned by search-ai (feat/infra); perf harness will 404 until that merges -- shipped anyway as specified.
 - Commit order: C1 Dockerfile+.dockerignore, C2 railway.json, C3 deps, C4 seed.ts, C5 perf-search.ts; C6 NOTES.md Result.
 
 Result
@@ -170,7 +200,7 @@ Result
 - typecheck and lint clean on all deliverables.
 
 Blockers / pivots
-- postgres.js sql() VALUES helper (EscapableArray) does not accept Date or null in its array parameter type. Fixed by converting all dates to ISO strings (iso()/now() helpers) and omitting nullable-with-null-intent columns from INSERT column lists, relying on DB defaults.
+- postgres.js sql() Values helper (EscapableArray) does not accept Date or null in its array parameter type. Fixed by converting all dates to ISO strings (iso()/now() helpers) and omitting nullable-with-null-intent columns from INSERT column lists, relying on DB defaults.
 - Per-note UPDATE for current_version_id: originally planned a FROM-VALUES batch update but nested sql`` in arrays is not supported by postgres.js. Switched to individual UPDATE per note per batch, which is simpler and correct.
 
 Commits
