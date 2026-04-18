@@ -142,3 +142,17 @@ order, never delete.
 - `3336ec0` auth: implement login sign-up sign-out server actions and auth pages
 - `d096e8c` auth: add create-org page, org switcher, and member management server actions
 - `3d9d91d` test: add org-switch scope tenant isolation case 11
+
+## 2026-04-19 — infra-deploy — Phase 3D: Dockerfile, railway.json, seed, perf harness
+
+Plan
+- Create multi-stage Dockerfile (node:20-alpine, deps/builder/runner stages, standalone output, non-root node user, HEALTHCHECK via node fetch, EXPOSE 3000, HOSTNAME=0.0.0.0).
+- Create .dockerignore to exclude .git, .next, node_modules, .env*, tests, .claude, .reports, *.md from build context.
+- Create railway.json with Docker builder, /api/health healthcheck path, ON_FAILURE restart policy.
+- Leave .env.example unchanged per AGENTS.md §1 (no new var names invented).
+- Confirm health route already correct (runtime=nodejs, force-dynamic, {ok:true}); middleware matcher already excludes /api/health — no changes needed.
+- Add devDeps (tsx, @faker-js/faker, autocannon, @types/autocannon, dotenv) and seed/seed:small/perf:search scripts plus engines + packageManager fields to package.json.
+- Write scripts/seed.ts: 5 orgs, 20 users, 10k notes (1k with --small), 500 versioned notes (3-5 versions each), 50 files rows (no Storage upload), ~30 shares, tags + note_tags; batched inserts (chunk 500); ON CONFLICT DO NOTHING; faker.seed(42); chicken-and-egg current_version_id resolved per batch (insert notes null, insert versions, UPDATE to latest version_id).
+- Write scripts/perf-search.ts: autocannon, 10 connections, 30s, GET /search?q=<term> with auth cookie from PERF_COOKIE env or @supabase/supabase-js sign-in; prints p50/p95/p99.
+- NOTE: /search route is owned by search-ai (feat/infra); perf harness will 404 until that merges — shipped anyway as specified.
+- Commit order: C1 Dockerfile+.dockerignore, C2 railway.json, C3 deps, C4 seed.ts, C5 perf-search.ts; C6 NOTES.md Result.
