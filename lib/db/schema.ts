@@ -3,7 +3,19 @@
 //
 // Order in this file is load-bearing: drizzle-kit emits CREATE TABLE in
 // source order, followed by CREATE POLICY statements. Any FK or policy
-// subselect that references another table needs that table above.
+// subselect that references another table needs that table declared above.
+//
+// RLS design (AGENTS.md section 2):
+// - Every tenant-scoped table: org_id NOT NULL, ENABLE ROW LEVEL SECURITY,
+//   USING + WITH CHECK for every verb that supports them.
+// - Child tables (note_versions, note_shares, note_tags, files, ai_summaries)
+//   resolve authorization by EXISTS-joining the current parent notes row
+//   (deleted_at IS NULL, is_org_member, current visibility/share/role) —
+//   never from historical state.
+// - public.is_org_member(org uuid) and public.org_role(org uuid) are
+//   SECURITY DEFINER helpers defined in migration 0001_rls_helpers.sql.
+//   They are referenced here by name in policy SQL expressions; Postgres
+//   validates the function at query execution time, not at CREATE POLICY time.
 //
 // See PLAN.md section 2 for the table list and AGENTS.md section 2 for
 // the security invariants every policy exists to enforce.
@@ -14,6 +26,7 @@ import {
   integer,
   jsonb,
   pgEnum,
+  pgPolicy,
   pgTable,
   primaryKey,
   text,
@@ -47,8 +60,11 @@ export const sharePermissionEnum = pgEnum("share_permission_enum", [
 // ----- users (mirror of auth.users) ---------------------------------------
 //
 // id matches auth.users.id. No DB-level FK into the auth schema; Supabase
-// owns that boundary and the mirror is maintained by an auth trigger
-// (Phase 2 deliverable).
+// owns that boundary; the mirror is maintained by an auth trigger (Phase 2).
+//
+// RLS: SELECT for self or same-org colleagues; UPDATE for self only.
+// No INSERT policy — rows are inserted by the auth trigger (security definer).
+// No DELETE policy — account deletion is an out-of-band admin operation.
 
 export const users = pgTable(
   "users",
@@ -65,10 +81,38 @@ export const users = pgTable(
   },
   (t) => ({
     emailUnique: uniqueIndex("users_email_uq").on(t.email),
+    // SELECT: self or any user in a shared org.
+    selectPolicy: pgPolicy("users_select_self_or_same_org", {
+      as: "permissive",
+      for: "select",
+      to: "authenticated",
+      using: sql`
+        id = auth.uid()
+        or exists (
+          select 1
+          from public.memberships m1
+          join public.memberships m2 on m1.org_id = m2.org_id
+          where m1.user_id = auth.uid()
+            and m2.user_id = users.id
+        )
+      `,
+    }),
+    // UPDATE: self only (display_name, etc.).
+    updatePolicy: pgPolicy("users_update_self", {
+      as: "permissive",
+      for: "update",
+      to: "authenticated",
+      using: sql`id = auth.uid()`,
+      withCheck: sql`id = auth.uid()`,
+    }),
   }),
-);
+).enableRLS();
 
 // ----- organizations -------------------------------------------------------
+//
+// RLS: SELECT for members; INSERT for any authenticated (companion membership
+// row inserted by Phase 2 Server Action in the same tx); UPDATE for owners.
+// No DELETE policy in Phase 1 (org deletion is a Phase 4+ concern).
 
 export const organizations = pgTable(
   "organizations",
@@ -85,10 +129,36 @@ export const organizations = pgTable(
   },
   (t) => ({
     slugUnique: uniqueIndex("organizations_slug_uq").on(t.slug),
+    selectPolicy: pgPolicy("organizations_select_member", {
+      as: "permissive",
+      for: "select",
+      to: "authenticated",
+      using: sql`public.is_org_member(id)`,
+    }),
+    insertPolicy: pgPolicy("organizations_insert_authenticated", {
+      as: "permissive",
+      for: "insert",
+      to: "authenticated",
+      // Any authenticated user may create an org; Phase 2 Server Action
+      // always inserts the companion membership (role=owner) in the same tx.
+      withCheck: sql`true`,
+    }),
+    updatePolicy: pgPolicy("organizations_update_owner", {
+      as: "permissive",
+      for: "update",
+      to: "authenticated",
+      using: sql`public.org_role(id) = 'owner'`,
+      withCheck: sql`public.org_role(id) = 'owner'`,
+    }),
   }),
-);
+).enableRLS();
 
 // ----- memberships (user <-> org with role) --------------------------------
+//
+// RLS: SELECT for self or org admin; INSERT/UPDATE for org admin only;
+// DELETE for self (leave) or admin (remove member).
+// The admin INSERT policy is what prevents self-invite into another org
+// (test case 7 in the tenant-isolation suite).
 
 export const memberships = pgTable(
   "memberships",
@@ -112,8 +182,39 @@ export const memberships = pgTable(
     userOrgUnique: uniqueIndex("memberships_user_org_uq").on(t.userId, t.orgId),
     byOrg: index("memberships_org_idx").on(t.orgId),
     byUser: index("memberships_user_idx").on(t.userId),
+    selectPolicy: pgPolicy("memberships_select_self_or_admin", {
+      as: "permissive",
+      for: "select",
+      to: "authenticated",
+      using: sql`
+        user_id = auth.uid()
+        or public.org_role(org_id) in ('owner', 'admin')
+      `,
+    }),
+    insertPolicy: pgPolicy("memberships_insert_admin", {
+      as: "permissive",
+      for: "insert",
+      to: "authenticated",
+      withCheck: sql`public.org_role(org_id) in ('owner', 'admin')`,
+    }),
+    updatePolicy: pgPolicy("memberships_update_admin", {
+      as: "permissive",
+      for: "update",
+      to: "authenticated",
+      using: sql`public.org_role(org_id) in ('owner', 'admin')`,
+      withCheck: sql`public.org_role(org_id) in ('owner', 'admin')`,
+    }),
+    deletePolicy: pgPolicy("memberships_delete_admin_or_self", {
+      as: "permissive",
+      for: "delete",
+      to: "authenticated",
+      using: sql`
+        user_id = auth.uid()
+        or public.org_role(org_id) in ('owner', 'admin')
+      `,
+    }),
   }),
-);
+).enableRLS();
 
 // ----- notes ---------------------------------------------------------------
 //
@@ -124,7 +225,13 @@ export const memberships = pgTable(
 // same transaction. Enforcement lives in the Server Action, not the schema.
 //
 // deleted_at drives the soft-delete invariant (AGENTS.md section 2 item 12).
-// All RLS policies below treat deleted_at IS NOT NULL rows as invisible.
+// All RLS policies filter deleted_at IS NOT NULL rows as invisible.
+//
+// RLS visibility logic (SELECT):
+// - is_org_member AND deleted_at IS NULL AND one of:
+//   - visibility in ('org','public_in_org') — org-wide notes
+//   - author_id = auth.uid() — own private note
+//   - share exists for auth.uid() — explicitly shared private note
 
 export const notes = pgTable(
   "notes",
@@ -148,27 +255,90 @@ export const notes = pgTable(
       .defaultNow(),
   },
   (t) => ({
-    // Primary list page: "my org's active notes, newest first".
     orgUpdated: index("notes_org_updated_idx")
       .on(t.orgId, t.updatedAt.desc())
       .where(sql`${t.deletedAt} is null`),
-    // "Notes I authored in this org".
     orgAuthor: index("notes_org_author_idx")
       .on(t.orgId, t.authorId)
       .where(sql`${t.deletedAt} is null`),
     currentVersion: index("notes_current_version_idx").on(t.currentVersionId),
+    selectPolicy: pgPolicy("notes_select_member", {
+      as: "permissive",
+      for: "select",
+      to: "authenticated",
+      using: sql`
+        public.is_org_member(org_id)
+        and deleted_at is null
+        and (
+          visibility in ('org', 'public_in_org')
+          or author_id = auth.uid()
+          or exists (
+            select 1 from public.note_shares s
+            where s.note_id = notes.id
+              and s.user_id = auth.uid()
+          )
+        )
+      `,
+    }),
+    insertPolicy: pgPolicy("notes_insert_member", {
+      as: "permissive",
+      for: "insert",
+      to: "authenticated",
+      withCheck: sql`
+        public.is_org_member(org_id)
+        and author_id = auth.uid()
+        and deleted_at is null
+      `,
+    }),
+    // UPDATE: author, org admin, or a user with edit-level share.
+    // WITH CHECK also prevents moving a note to another org via UPDATE.
+    updatePolicy: pgPolicy("notes_update_editor", {
+      as: "permissive",
+      for: "update",
+      to: "authenticated",
+      using: sql`
+        public.is_org_member(org_id)
+        and deleted_at is null
+        and (
+          author_id = auth.uid()
+          or public.org_role(org_id) in ('owner', 'admin')
+          or exists (
+            select 1 from public.note_shares s
+            where s.note_id = notes.id
+              and s.user_id = auth.uid()
+              and s.permission = 'edit'
+          )
+        )
+      `,
+      withCheck: sql`
+        public.is_org_member(org_id)
+      `,
+    }),
+    // DELETE policy is used for hard-delete only (admin purge path).
+    // Normal deletion is a soft-delete (UPDATE setting deleted_at).
+    deletePolicy: pgPolicy("notes_delete_admin_or_author", {
+      as: "permissive",
+      for: "delete",
+      to: "authenticated",
+      using: sql`
+        public.is_org_member(org_id)
+        and (
+          author_id = auth.uid()
+          or public.org_role(org_id) in ('owner', 'admin')
+        )
+      `,
+    }),
   }),
-);
+).enableRLS();
 
 // ----- note_versions -------------------------------------------------------
 //
-// Immutable snapshots. No UPDATE or DELETE policy; cascades on parent delete
-// are the only path that removes rows.
+// Immutable snapshots. SELECT + INSERT only; cascades on parent delete are
+// the only path that removes rows (no DELETE policy for authenticated).
 //
-// org_id is denormalized so (org_id, note_id) can index cheaply and so that a
-// future cross-partition move would have to be explicit. RLS still resolves
-// tenant isolation by joining to the parent notes row (AGENTS.md section 2
-// item 8: child authorization is *never* historical).
+// Child access joins to the current parent notes row: deleted_at IS NULL,
+// is_org_member, current visibility/share/role — not historical state
+// (AGENTS.md section 2 item 8).
 
 export const noteVersions = pgTable(
   "note_versions",
@@ -194,10 +364,60 @@ export const noteVersions = pgTable(
       t.versionNumber,
     ),
     orgNote: index("note_versions_org_note_idx").on(t.orgId, t.noteId),
+    selectPolicy: pgPolicy("note_versions_select_via_parent", {
+      as: "permissive",
+      for: "select",
+      to: "authenticated",
+      using: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = note_versions.note_id
+            and n.deleted_at is null
+            and public.is_org_member(n.org_id)
+            and (
+              n.visibility in ('org', 'public_in_org')
+              or n.author_id = auth.uid()
+              or exists (
+                select 1 from public.note_shares s
+                where s.note_id = n.id and s.user_id = auth.uid()
+              )
+            )
+        )
+      `,
+    }),
+    insertPolicy: pgPolicy("note_versions_insert_via_parent", {
+      as: "permissive",
+      for: "insert",
+      to: "authenticated",
+      withCheck: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = note_versions.note_id
+            and n.deleted_at is null
+            and public.is_org_member(n.org_id)
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+              or exists (
+                select 1 from public.note_shares s
+                where s.note_id = n.id
+                  and s.user_id = auth.uid()
+                  and s.permission = 'edit'
+              )
+            )
+        )
+        and author_id = auth.uid()
+      `,
+    }),
   }),
-);
+).enableRLS();
 
 // ----- note_shares ---------------------------------------------------------
+//
+// Child of notes. SELECT for the share recipient, note author, or org admin.
+// INSERT: note author or org admin can create a share.
+// UPDATE: note author or org admin can change permissions.
+// DELETE: note author, org admin, or the recipient themselves (unsubscribe).
 
 export const noteShares = pgTable(
   "note_shares",
@@ -220,10 +440,91 @@ export const noteShares = pgTable(
       t.userId,
     ),
     byUser: index("note_shares_user_idx").on(t.userId),
+    selectPolicy: pgPolicy("note_shares_select_via_parent", {
+      as: "permissive",
+      for: "select",
+      to: "authenticated",
+      using: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = note_shares.note_id
+            and n.deleted_at is null
+            and public.is_org_member(n.org_id)
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+              or note_shares.user_id = auth.uid()
+            )
+        )
+      `,
+    }),
+    insertPolicy: pgPolicy("note_shares_insert_author_or_admin", {
+      as: "permissive",
+      for: "insert",
+      to: "authenticated",
+      withCheck: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = note_shares.note_id
+            and n.deleted_at is null
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+            )
+        )
+      `,
+    }),
+    updatePolicy: pgPolicy("note_shares_update_author_or_admin", {
+      as: "permissive",
+      for: "update",
+      to: "authenticated",
+      using: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = note_shares.note_id
+            and n.deleted_at is null
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+            )
+        )
+      `,
+      withCheck: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = note_shares.note_id
+            and n.deleted_at is null
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+            )
+        )
+      `,
+    }),
+    deletePolicy: pgPolicy("note_shares_delete_author_admin_or_self", {
+      as: "permissive",
+      for: "delete",
+      to: "authenticated",
+      using: sql`
+        note_shares.user_id = auth.uid()
+        or exists (
+          select 1 from public.notes n
+          where n.id = note_shares.note_id
+            and n.deleted_at is null
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+            )
+        )
+      `,
+    }),
   }),
-);
+).enableRLS();
 
 // ----- tags ----------------------------------------------------------------
+//
+// Tag names are unique per org. SELECT: org member. INSERT: org member.
+// UPDATE/DELETE: org admin or tag creator (no creator field here; use admin).
 
 export const tags = pgTable(
   "tags",
@@ -239,10 +540,30 @@ export const tags = pgTable(
   },
   (t) => ({
     orgNameUnique: uniqueIndex("tags_org_name_uq").on(t.orgId, t.name),
+    selectPolicy: pgPolicy("tags_select_member", {
+      as: "permissive",
+      for: "select",
+      to: "authenticated",
+      using: sql`public.is_org_member(org_id)`,
+    }),
+    insertPolicy: pgPolicy("tags_insert_member", {
+      as: "permissive",
+      for: "insert",
+      to: "authenticated",
+      withCheck: sql`public.is_org_member(org_id)`,
+    }),
+    deletePolicy: pgPolicy("tags_delete_admin", {
+      as: "permissive",
+      for: "delete",
+      to: "authenticated",
+      using: sql`public.org_role(org_id) in ('owner', 'admin')`,
+    }),
   }),
-);
+).enableRLS();
 
 // ----- note_tags -----------------------------------------------------------
+//
+// Child of both notes and tags. SELECT/INSERT/DELETE resolve via parent notes.
 
 export const noteTags = pgTable(
   "note_tags",
@@ -260,8 +581,73 @@ export const noteTags = pgTable(
   (t) => ({
     pk: primaryKey({ columns: [t.noteId, t.tagId] }),
     byTag: index("note_tags_tag_idx").on(t.tagId),
+    selectPolicy: pgPolicy("note_tags_select_via_parent", {
+      as: "permissive",
+      for: "select",
+      to: "authenticated",
+      using: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = note_tags.note_id
+            and n.deleted_at is null
+            and public.is_org_member(n.org_id)
+            and (
+              n.visibility in ('org', 'public_in_org')
+              or n.author_id = auth.uid()
+              or exists (
+                select 1 from public.note_shares s
+                where s.note_id = n.id and s.user_id = auth.uid()
+              )
+            )
+        )
+      `,
+    }),
+    insertPolicy: pgPolicy("note_tags_insert_via_parent", {
+      as: "permissive",
+      for: "insert",
+      to: "authenticated",
+      withCheck: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = note_tags.note_id
+            and n.deleted_at is null
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+              or exists (
+                select 1 from public.note_shares s
+                where s.note_id = n.id
+                  and s.user_id = auth.uid()
+                  and s.permission = 'edit'
+              )
+            )
+        )
+      `,
+    }),
+    deletePolicy: pgPolicy("note_tags_delete_via_parent", {
+      as: "permissive",
+      for: "delete",
+      to: "authenticated",
+      using: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = note_tags.note_id
+            and n.deleted_at is null
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+              or exists (
+                select 1 from public.note_shares s
+                where s.note_id = n.id
+                  and s.user_id = auth.uid()
+                  and s.permission = 'edit'
+              )
+            )
+        )
+      `,
+    }),
   }),
-);
+).enableRLS();
 
 // ----- files ---------------------------------------------------------------
 //
@@ -297,10 +683,76 @@ export const files = pgTable(
     pathUnique: uniqueIndex("files_path_uq").on(t.path),
     orgNote: index("files_org_note_idx").on(t.orgId, t.noteId),
     byNote: index("files_note_idx").on(t.noteId),
+    selectPolicy: pgPolicy("files_select_via_parent", {
+      as: "permissive",
+      for: "select",
+      to: "authenticated",
+      using: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = files.note_id
+            and n.deleted_at is null
+            and public.is_org_member(n.org_id)
+            and (
+              n.visibility in ('org', 'public_in_org')
+              or n.author_id = auth.uid()
+              or exists (
+                select 1 from public.note_shares s
+                where s.note_id = n.id and s.user_id = auth.uid()
+              )
+            )
+        )
+      `,
+    }),
+    insertPolicy: pgPolicy("files_insert_via_parent", {
+      as: "permissive",
+      for: "insert",
+      to: "authenticated",
+      withCheck: sql`
+        uploader_id = auth.uid()
+        and exists (
+          select 1 from public.notes n
+          where n.id = files.note_id
+            and n.deleted_at is null
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+              or exists (
+                select 1 from public.note_shares s
+                where s.note_id = n.id
+                  and s.user_id = auth.uid()
+                  and s.permission = 'edit'
+              )
+            )
+        )
+      `,
+    }),
+    deletePolicy: pgPolicy("files_delete_via_parent", {
+      as: "permissive",
+      for: "delete",
+      to: "authenticated",
+      using: sql`
+        uploader_id = auth.uid()
+        or exists (
+          select 1 from public.notes n
+          where n.id = files.note_id
+            and n.deleted_at is null
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+            )
+        )
+      `,
+    }),
   }),
-);
+).enableRLS();
 
 // ----- ai_summaries --------------------------------------------------------
+//
+// Child of notes. SELECT/INSERT via parent note access check.
+// UPDATE: the user who triggered the summary (author_id here) or org admin.
+// No DELETE policy for authenticated (summaries cascade when the note is
+// hard-deleted; soft-delete hides them via the parent join).
 
 export const aiSummaries = pgTable(
   "ai_summaries",
@@ -333,8 +785,75 @@ export const aiSummaries = pgTable(
       t.noteId,
       t.createdAt.desc(),
     ),
+    selectPolicy: pgPolicy("ai_summaries_select_via_parent", {
+      as: "permissive",
+      for: "select",
+      to: "authenticated",
+      using: sql`
+        exists (
+          select 1 from public.notes n
+          where n.id = ai_summaries.note_id
+            and n.deleted_at is null
+            and public.is_org_member(n.org_id)
+            and (
+              n.visibility in ('org', 'public_in_org')
+              or n.author_id = auth.uid()
+              or exists (
+                select 1 from public.note_shares s
+                where s.note_id = n.id and s.user_id = auth.uid()
+              )
+            )
+        )
+      `,
+    }),
+    insertPolicy: pgPolicy("ai_summaries_insert_via_parent", {
+      as: "permissive",
+      for: "insert",
+      to: "authenticated",
+      withCheck: sql`
+        author_id = auth.uid()
+        and exists (
+          select 1 from public.notes n
+          where n.id = ai_summaries.note_id
+            and n.deleted_at is null
+            and (
+              n.author_id = auth.uid()
+              or public.org_role(n.org_id) in ('owner', 'admin')
+              or exists (
+                select 1 from public.note_shares s
+                where s.note_id = n.id
+                  and s.user_id = auth.uid()
+                  and s.permission in ('edit', 'comment')
+              )
+            )
+        )
+      `,
+    }),
+    updatePolicy: pgPolicy("ai_summaries_update_author_or_admin", {
+      as: "permissive",
+      for: "update",
+      to: "authenticated",
+      using: sql`
+        author_id = auth.uid()
+        or exists (
+          select 1 from public.notes n
+          where n.id = ai_summaries.note_id
+            and n.deleted_at is null
+            and public.org_role(n.org_id) in ('owner', 'admin')
+        )
+      `,
+      withCheck: sql`
+        author_id = auth.uid()
+        or exists (
+          select 1 from public.notes n
+          where n.id = ai_summaries.note_id
+            and n.deleted_at is null
+            and public.org_role(n.org_id) in ('owner', 'admin')
+        )
+      `,
+    }),
   }),
-);
+).enableRLS();
 
 // ----- audit_logs ----------------------------------------------------------
 //
@@ -342,8 +861,10 @@ export const aiSummaries = pgTable(
 // system events (no actor) and pre-org-selection auth events (no org).
 // resource_id is text, not uuid, to accommodate storage object keys.
 //
-// RLS: INSERT-only for the authenticated role; reads go through the service
-// role (secret key) on admin paths not shipped until a later phase.
+// RLS: INSERT-only for the authenticated role; org_id must be null or a
+// member org. Reads go through the service role (secret key) on admin paths
+// not shipped until a later phase. No SELECT/UPDATE/DELETE policy for
+// the authenticated role.
 
 export const auditLogs = pgTable(
   "audit_logs",
@@ -367,5 +888,17 @@ export const auditLogs = pgTable(
       t.createdAt.desc(),
     ),
     byRequest: index("audit_logs_request_idx").on(t.requestId),
+    insertPolicy: pgPolicy("audit_logs_insert_self", {
+      as: "permissive",
+      for: "insert",
+      to: "authenticated",
+      withCheck: sql`
+        actor_id = auth.uid()
+        and (
+          org_id is null
+          or public.is_org_member(org_id)
+        )
+      `,
+    }),
   }),
-);
+).enableRLS();
