@@ -142,3 +142,18 @@ order, never delete.
 - `3336ec0` auth: implement login sign-up sign-out server actions and auth pages
 - `d096e8c` auth: add create-org page, org switcher, and member management server actions
 - `3d9d91d` test: add org-switch scope tenant isolation case 11
+
+## [2026-04-18T21:57:05Z] [lead-backend] Task: Phase 3A - Notes CRUD, versioning, tags, sharing
+
+**Plan:**
+- Create lib/notes/actions.ts: createNoteAction, listNotesAction, getNoteAction, softDeleteNoteAction, restoreNoteAction. All call requireOrgAccess before DB work. All wrapped with withContext + logAudit. No content in logs.
+- Create saveNoteAction with full versioning and optimistic concurrency: expectedVersionNumber must match fetched current version or return { conflict: true }. Insert new note_version snapshot, update current_version_id. Log note.save with version number only.
+- Create lib/notes/tag-actions.ts: createTagAction, listTagsAction, addTagToNoteAction, removeTagFromNoteAction. All gated by requireOrgAccess + canEditNote where applicable.
+- Create lib/notes/share-actions.ts: grantShareAction, revokeShareAction, listSharesAction. Author or admin gate enforced by canEditNote.
+- Add changeVisibilityAction: requireOrgAccess + canEditNote, validates against visibility enum, logs from/to.
+- Add listVersionsAction and getVersionAction: no content in logs.
+- Write tenant-isolation tests 12-15 BEFORE any UI wiring: 12 write isolation (view-only share cannot save), 13 share-grant isolation (non-author/admin cannot grant), 14 version access via soft-deleted parent, 15 tag isolation (cross-org blocked by canEditNote).
+- Commit budget: ~8-9 commits per AGENTS.md section 4.
+
+**Exit gate (PLAN.md Phase 3 merge into main):** tenant-isolation green; pnpm typecheck and lint clean.
+**Gate command:** `pnpm test:tenant-isolation && pnpm typecheck && pnpm lint`
