@@ -291,7 +291,11 @@ export const notes = pgTable(
       `,
     }),
     // UPDATE: author, org admin, or a user with edit-level share.
-    // WITH CHECK also prevents moving a note to another org via UPDATE.
+    // WITH CHECK verifies org membership on the new row. Cross-org moves
+    // are blocked at the DB level by the notes_org_immutable trigger
+    // (migration 0005) which raises if org_id changes — the trigger is
+    // the authoritative guard since WITH CHECK alone cannot compare
+    // old vs new org_id in a correlated subquery reliably.
     updatePolicy: pgPolicy("notes_update_editor", {
       as: "permissive",
       for: "update",
@@ -911,6 +915,7 @@ export const auditLogs = pgTable(
       to: "authenticated",
       withCheck: sql`
         actor_id = auth.uid()
+        and actor_id is not null
         and (
           org_id is null
           or public.is_org_member(org_id)
