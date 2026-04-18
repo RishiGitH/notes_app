@@ -1,0 +1,46 @@
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+.env.prep
+
+# Package manager
+.pnpm-store/
+pnpm-debug.log*
+.yarn/
+yarn-error.log
+.npm/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Testing / coverage
+coverage/
+.nyc_output/
+
+# Runtime / agent artifacts (local scratchpads — not part of the deliverable)
+.reports/
+drafts/
+
+# Supabase local dev
+supabase/.temp/
+supabase/.branches/
+
+
+
+# Railway / Vercel artifacts
+.vercel
+.railway
+.claude/settings.local.json
