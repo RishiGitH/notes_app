@@ -118,3 +118,27 @@ order, never delete.
 
 **Exit gate (PLAN.md Phase 2):** tenant-isolation green; user in two orgs can switch and see correct scope.
 **Gate commands:** `pnpm test:tenant-isolation && pnpm typecheck && pnpm lint`
+
+**Result:**
+- Installed ulid@3.0.2. Added getAdminSupabase() to lib/auth/server.ts using SUPABASE_SECRET_KEY via createClient from @supabase/supabase-js (not @supabase/ssr, which doesn't export createClient). persistSession and autoRefreshToken disabled on the service-role client.
+- Extended lib/auth/middleware.ts: mints a ULID per request, attaches as x-request-id to both request headers (for Server Components) and response headers (for log correlation). Reads org_id cookie and forwards as x-org-id request header. AsyncLocalStorage NOT used in middleware (edge-compatible).
+- Created lib/logging/request-context.ts: AsyncLocalStorage<RequestContext> singleton with withContext() HOF. getRequestContext() returns a safe fallback (never throws). Node runtime only.
+- Created lib/logging/audit.ts: logAudit() reads context store, inserts via admin client (bypasses RLS so server-initiated events always land). Swallows failures to stderr. Never logs content, secrets, PII beyond actor/org/action/resource.
+- Created lib/security/permissions.ts: requireOrgAccess(orgId, minRole) queries memberships via admin client, throws Forbidden and logs permission.denied on failure. ROLE_ORDER map (owner > admin > member > viewer). canEditNote() checks author, org role, or edit share.
+- Created lib/auth/actions.ts: loginAction, signUpAction (mirrors user into public.users manually; auth trigger deferred), signOutAction. All call withContext + logAudit for every outcome. signUpAction redirects to /org/create for new users. All export runtime = 'nodejs'.
+- Full login page and sign-up page at /sign-up using useActionState + useFormStatus with shadcn/ui Button/Input/Label.
+- Created lib/org/actions.ts: createOrgAction (org + membership in one logical unit, sets org_id cookie), switchOrgAction (validates membership before setting cookie), addMemberAction and removeMemberAction (require admin, log member.add/remove).
+- OrgSwitcher component (client, useTransition). App layout (requireUser, fetch memberships via admin client, redirect to /org/create if none, render top nav with switcher + sign-out).
+- Org create page (/org/create) with slug uniqueness check. Members page with server-rendered list + AddMemberForm client component.
+- withContext() is used inline in every Server Action — a separate commit was not needed. Commit 7 from the plan was merged into commits 5 and 6.
+- Added tenant-isolation test 11: verifies RLS holds for a user in two orgs (non-member org returns [], member-of-both org returns rows, single-org user cannot see other-org notes).
+- Gate: 20/20 tenant-isolation tests green, pnpm typecheck and pnpm lint clean.
+
+**Commits:**
+- `e554050` auth: install ulid, add getAdminSupabase service-role client to lib/auth/server.ts
+- `34e4903` auth: add request-id minting and org-cookie propagation to middleware
+- `b63eb2a` logging: add request-context AsyncLocalStorage store and logAudit helper
+- `ffbaccd` security: add requireOrgAccess and canEditNote to lib/security/permissions.ts
+- `3336ec0` auth: implement login sign-up sign-out server actions and auth pages
+- `d096e8c` auth: add create-org page, org switcher, and member management server actions
+- `3d9d91d` test: add org-switch scope tenant isolation case 11
