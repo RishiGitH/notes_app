@@ -31,6 +31,10 @@ export async function getServerSupabase() {
   });
 }
 
+// getSession() reads the local cookie without re-validating with Supabase's
+// server. It is intentionally kept for reading JWT claims (e.g. org metadata)
+// but must NEVER be used for authorization decisions. Use requireUser() for
+// any auth check — it calls getUser() which validates with the server.
 export async function getSession(): Promise<Session | null> {
   const supabase = await getServerSupabase();
   if (!supabase) return null;
@@ -38,10 +42,17 @@ export async function getSession(): Promise<Session | null> {
   return data.session;
 }
 
+// requireUser() calls getUser(), which re-validates the JWT with Supabase's
+// auth server. This is the only correct way to gate access in Server Components
+// and Server Actions. Never use getSession() for authorization.
 export async function requireUser() {
-  const session = await getSession();
-  if (!session) {
+  const supabase = await getServerSupabase();
+  if (!supabase) {
     throw new Error("Not authenticated");
   }
-  return session.user;
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) {
+    throw new Error("Not authenticated");
+  }
+  return data.user;
 }
