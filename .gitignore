@@ -44,3 +44,4 @@ supabase/.branches/
 .vercel
 .railway
 .claude/settings.local.json
+.claude/settings.json

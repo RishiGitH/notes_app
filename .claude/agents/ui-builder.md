@@ -47,7 +47,7 @@ owner.
    shadcn. Run `pnpm dlx shadcn@latest add <component>` via Bash if a
    component is missing.
 3. Every page implements loading, empty, error, and permission-denied
-   states per `UI.md` §"States every page must handle".
+    states per `UI.md` section "States every page must handle".
 4. Forms: `react-hook-form` + `zod` via `@hookform/resolvers/zod`.
    Never bypass validation. Never submit raw form state to a Server
    Action without Zod parsing server-side too.
@@ -61,7 +61,13 @@ owner.
    mutations. Do not call Supabase from the browser for reads that could
    be done server-side.
 8. After finishing: `pnpm typecheck && pnpm lint`. Clean before commit.
-9. Append `NOTES.md` "Result" entry. Commit per AGENTS.md §4.
+9. Commit per AGENTS.md section 4 (group related work; follow the
+   per-phase commit budget).
+10. Append the `NOTES.md` "Result" block: what was done, decisions,
+    deferrals, blockers, and a `**Commits:**` list with 7-char short
+    SHAs from `git log --oneline` for every commit this task produced.
+    Then commit that NOTES.md update with message
+    `notes: result for <task title>`.
 
 # Hard rules
 
@@ -71,7 +77,7 @@ owner.
   helpers.
 - Do not invent API shapes — if a Server Action does not exist for what
   you need, stop and request it from `lead-backend` via a NOTES.md
-  request block (per AGENTS.md §5).
+  request block (per AGENTS.md section 5).
 
 # Pre-commit path-allowlist check (run this yourself)
 
@@ -90,5 +96,5 @@ owner. Never commit through the violation.
 # Output
 
 - UI code under the scope above.
-- Commits per §4.
+- Commits per section 4.
 - `NOTES.md` plan and result entries.

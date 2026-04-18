@@ -1,29 +1,34 @@
-# NOTES.md — Agent Work Journal
+# NOTES.md — Work Journal
 
-Append-only, chronological. Authored by the executing agent of each
-task per `AGENTS.md` section 5. Never edited retroactively; never cleaned
-up.
+Live scratchpad. Append-only, chronological. Written by the agent
+actually doing the work, as the work happens. Messy is fine — the
+goal is authenticity, not polish. Don't edit prior entries.
 
-Entry format (standing rule, not triggered externally):
+Format:
 
 ```
-## [YYYY-MM-DDTHH:MM:SSZ] [<agent-name>] Task: <one-line title>
+## YYYY-MM-DD HH:MM — <agent-name> — <one-line title>
 
-**Plan:**
-- ...
+Plan
+- what I'm about to do
 
-**Result:**
-- what was done
-- decisions taken and why
-- what was deferred
-- blockers encountered
+Result
+- what I actually did
+- decisions and why
+- what I deferred
 
-**Commits:**
-- `<short-sha>` <commit subject>
+Blockers / pivots
+- things that didn't work
+- mid-task changes of approach
+
+Commits
+- `<short-sha>` <subject>
 ```
 
-Merge conflicts on this file resolve by keeping both entries in
-timestamp order, never delete.
+`Blockers / pivots` is optional but include it when something fought
+you — that's the signal the journal is real. If two worktrees append
+at the same time and git conflicts, keep both entries in timestamp
+order, never delete.
 
 ## [2026-04-18T16:46:17Z] [lead-backend] Task: Phase 0 - Scaffold
 

@@ -1,32 +1,82 @@
-# BUGS.md — Confirmed Bugs Found and Fixed
+# BUGS.md
 
-Every entry here is a bug that:
-1. Was identified during review (by `security-reviewer`,
-   `observability-reviewer`, manual reading, or the tenant-isolation
-   suite),
-2. Was verified as reproducible via a failing test by
-   `bug-verifier` (or by a directly-authored failing test), and
-3. Has a fix commit SHA on `main`.
+Stuff I caught and fixed. Each has a commit SHA on main.
+No SHA = not a bug yet, just a suspicion — those live in `.reports/`
+or REVIEW.md under "known risks."
 
-Entries without a fix commit SHA are not yet bugs. Claims without a
-failing test are suspicions and do not belong here — they live in
-`.reports/security/*.md` under "Suspicions" or in `REVIEW.md` under
-"Known risks."
-
-## Entry format
+**Format for agents writing new entries:**
+Read the existing entries below before adding one — match the tone
+and length. Plain English, short paragraphs, no bullet soup.
 
 ```
-### B-<NNNN> — <title>
+## <what was wrong, plain English>
 
-- **severity:** crit | high | med | low
-- **file:** path/relative/to/repo
-- **root cause:** <1–2 sentences>
-- **how found:** security-reviewer | observability-reviewer | schema-reviewer | manual read | tenant-isolation suite
-- **regression test:** tests/verify/<path> or tests/tenant-isolation/<path>
-- **fix commit:** <short SHA>
+**<crit | high | med | low>** — fix `<7-char sha>`
 
-**Description.** <2–4 sentences.>
-
-**Why the AI made this mistake.** <1–2 sentences. Pattern-level,
-not a specific agent call-out.>
+First paragraph: what happened and what I changed to fix it.
+Second paragraph: why the agent got it wrong (pattern-level, honest).
 ```
+
+Severity guide: crit/high = touches tenant isolation, auth, secret
+keys, or the AI path. med = same-tenant info leak, bad logging.
+low = build/config/hygiene.
+
+---
+
+## Ran on Node 16 and used legacy Supabase key names
+
+**high** — fix `<sha>`
+
+Two in one. Agent was on Node 16 despite the Node 20 pin — caught it
+when `AsyncLocalStorage` behaved weird. Pinned `.nvmrc` + `engines`
+in `package.json`.
+
+Worse: wired `anon` / `service_role` env names straight into code,
+ignoring the canonical `SUPABASE_PUBLISHABLE_KEY` /
+`SUPABASE_SECRET_KEY` contract in AGENTS.md section 1. Replaced every
+reference, verified the secret never reaches the client bundle.
+
+Most tutorials still use the old names. Agent reached for the common
+answer instead of reading the project rules first.
+
+---
+
+## uuid package installed for ID generation when Postgres already handles it
+
+**low** — fix `<sha>`
+
+Schema uses `defaultRandom()` so Postgres mints all row IDs. Agent
+still `pnpm add`'d `uuid` + the deprecated `@types/uuid` and was
+about to import it in lib code. Removed `@types/uuid`, kept `uuid` as
+devDep (tests legitimately pre-compute IDs before INSERT). Added rule
+in AGENTS.md section 1: DB for row PKs, `node:crypto#randomUUID()`
+for server-side random tokens like storage path suffixes, `ulid` for
+request IDs, `uuid` in tests only.
+
+Reflex "need a UUID, install uuid" move. Didn't check the DB was
+already the source of truth, didn't know Node 20 ships
+`crypto.randomUUID()` built in.
+
+---
+
+## Vitest didn't load .env.local so tenant-isolation suite always failed the safety check
+
+**med** — fix `<sha>`
+
+The globalSetup guard correctly refuses to run unless `DIRECT_URL`
+points at 127.0.0.1. But vitest doesn't auto-load `.env.local` the
+way Next.js does — it only picks up `VITE_`-prefixed vars unless you
+wire it explicitly. So `DIRECT_URL` was always `(unset)` and the
+guard tripped on every run even with Supabase running. Fixed by
+adding a small `loadEnvFile()` helper at the top of `globalSetup.ts`
+that reads `.env` then `.env.local` using Node's built-in `fs`,
+without overriding vars already set in the shell.
+
+Also caught a trailing space on `SUPABASE_SECRET_KEY` in `.env.local`
+while fixing this — trimmed it before it caused an auth bug later.
+
+Agent assumed vitest would auto-load `.env.local` because Next.js
+does. It doesn't — this is a well-known vite/vitest gotcha that's
+easy to miss when you're thinking in Next.js terms.
+
+---

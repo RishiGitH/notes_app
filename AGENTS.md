@@ -14,7 +14,7 @@ review.
 **Document roles:** `AGENTS.md` is the rules (this file). `PLAN.md`
 is the phases and gates. `UI.md` is the page and component
 contract. `NOTES.md` is the live work journal (append-only,
-per §5). When in doubt, rules in `AGENTS.md` beat anything else.
+per section 5). When in doubt, rules in `AGENTS.md` beat anything else.
 
 ---
 
@@ -67,7 +67,7 @@ Why two values for `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SECRET_KEY`:
 the Supabase CLI (used for local dev and tests) supports only the legacy
 JWT-based keys. The hosted Supabase platform (production) prefers the new
 `sb_*` scheme. The env var names stay the same either way — only the
-values differ. The security rule in §2 item 3 applies to whichever value
+values differ. The security rule in section 2 item 3 applies to whichever value
 is present.
 
 ---
@@ -162,13 +162,13 @@ drizzle/                        # generated migrations + meta
 scripts/
   seed.ts                       # 10k-note seeder
 tests/
-  tenant-isolation/             # the gate suite — see §6
+  tenant-isolation/             # the gate suite, see section 6
   integration/
   unit/
 docker/
   Dockerfile
 .claude/
-  agents/                       # subagent definitions, see §7
+  agents/                       # subagent definitions, see section 7
   commands/                     # slash commands
 middleware.ts                   # root middleware
 AGENTS.md                       # this file
@@ -185,14 +185,24 @@ DEFERRED.md                     # explicit out-of-scope decisions
 
 ## 4. Git protocol
 
-- One commit per logical unit of work. Many small commits, never one giant
-  commit at the end.
+- One commit per logical unit of work. A logical unit is a feature,
+  a table + its RLS, a security helper + its tests, a bug fix, or a
+  dependency group install. It is **not** every file save, every
+  individual `pnpm add`, or every stub file. Group related installs
+  and stubs into a single commit. Do not commit each bullet of a
+  NOTES.md plan as its own commit.
+- Rough commit budget per phase (sanity check, not a hard cap):
+  Phase 0: 4-6. Phase 1: 6-10. Phase 2: 4-6. Phase 3 per track:
+  15-25. Phase 4: 5-10. Phase 5: 3-5. Exceeding these means you are
+  committing too granularly.
 - Commit message format:
-  `<scope>: <what> — <why>`
+  `<scope>: <what>, <why>`
   Examples:
-  - `db: add note_versions table — versioning infra for §3 of PLAN`
-  - `security: tighten RLS on note_shares — child must join parent`
-  - `ai: validate summarizer output via zod — reject unparseable model output`
+  - `db: add note_versions table, store historical content per note`
+  - `security: tighten RLS on note_shares, child must join parent`
+  - `ai: validate summarizer output via zod, reject unparseable model output`
+- Commit messages are plain ASCII. No `§`, no em-dashes (`—`), no
+  phase number references. Describe the change itself.
 - Branches:
   - `main` — lead/backend track
   - `feat/ui` — UI track (separate worktree)
@@ -222,47 +232,69 @@ DEFERRED.md                     # explicit out-of-scope decisions
 
 ## 5. NOTES.md protocol
 
-`NOTES.md` is the live work journal, authored by the agent actually doing
-the work, as the work happens. It is never authored on demand by an
-external command. It is append-only and chronological. It is the
-artifact that shows how decisions were made.
+`NOTES.md` is the live work journal, authored by the agent actually
+doing the work, as the work happens. Never authored on demand by an
+external command. Append-only, chronological. It shows how decisions
+were made and where the rough edges were — authenticity over polish.
 
 This is a **standing rule**, not a triggered workflow. Every agent —
 implementer or review — follows it without being reminded per task.
 
-- Before starting any task, the executing agent appends:
+- Before starting any task, the executing agent appends a heading and
+  a Plan section:
 
   ```
-  ## [YYYY-MM-DDTHH:MM:SSZ] [<agent-name>] Task: <one-line title>
+  ## YYYY-MM-DD HH:MM — <agent-name> — <one-line title>
 
-  **Plan:**
+  Plan
   - <bullet>
   - <bullet>
   ```
 
-  The timestamp is current UTC time in that exact format. The agent
-  name is the executing agent's name (`lead-backend`, `ui-builder`,
-  `search-ai`, `infra-deploy`, `security-reviewer`, etc.), not the caller's.
+  Timestamp is current local time, minute-precision. The agent name
+  is the executing agent's name (`lead-backend`, `ui-builder`,
+  `search-ai`, `infra-deploy`, `security-reviewer`, etc.), not the
+  caller's.
 
-- After finishing the task, the same executing agent appends under the
-  same heading (never editing prior content):
+- After finishing the task, the same executing agent appends under
+  the same heading (never editing prior content):
 
   ```
-  **Result:**
+  Result
   - what was done
-  - decisions taken and why
-  - what was deferred and where it is recorded (DEFERRED.md or a follow-up)
-  - blockers encountered
+  - decisions and why
+  - what was deferred (to DEFERRED.md or a follow-up)
+
+  Blockers / pivots
+  - things tried that didn't work
+  - mid-task changes of approach
+  - (skip this section if the task was perfectly linear — rare)
+
+  Commits
+  - `<short-sha>` <subject>
+  - `<short-sha>` <subject>
   ```
+
+  The Commits list is every commit produced by this task, in order,
+  using 7-character short SHAs from `git log --oneline`. Subject line
+  only, not the full message body. Review-only agents
+  (security-reviewer, schema-reviewer, observability-reviewer,
+  scope-cutter, bug-verifier) omit the Commits section since they
+  produce no commits. The NOTES.md Result commit itself is not listed
+  in its own Commits block.
+
+- **Authenticity over polish.** If something took two attempts, say
+  so. If a plan bullet got dropped mid-task, note it in
+  `Blockers / pivots`. A journal with zero false starts across a
+  24-hour build is not a journal, it's a press release. The goal is
+  to show how decisions were actually made.
 
 - Write in third person as the executing agent. Never include raw
   user prompts. Never edit or "clean up" prior entries — append only.
 
-- If a task was attempted but not finished, the Result section is
-  still appended, describing where it stopped and why. Abandoned
-  tasks are documented, not deleted.
-
-- Messy is acceptable. Authentic chronological work is the goal.
+- If a task was attempted but not finished, still append a Result,
+  describing where it stopped and why. Abandoned tasks are
+  documented, not deleted.
 
 - **Concurrent appends.** When two worktrees append to NOTES.md at
   nearly the same time and git produces a merge conflict on this
@@ -274,11 +306,11 @@ implementer or review — follows it without being reminded per task.
   from `lead-backend`), append a block of the form:
 
   ```
-  ## [timestamp] [<requesting-agent>] Request to <owning-agent>: <title>
+  ## YYYY-MM-DD HH:MM — <requesting-agent> — Request to <owning-agent>: <title>
 
-  **Need:** <interface or outcome>
-  **Why:** <one line>
-  **Blocking:** <task this is blocking>
+  Need: <interface or outcome>
+  Why: <one line>
+  Blocking: <task this is blocking>
   ```
 
   The owning agent responds in a new standard Task entry referencing
@@ -368,7 +400,10 @@ corresponds to a named agent here. Agents not listed here are not used.
    candidate finding, writes a failing Vitest test that demonstrates
    it. If no failing test can be written, the claim is downgraded to
    a "suspicion" and does not enter `BUGS.md`. Callable via
-   `/verify-bug` or via `/triage` for batch verification.
+   `/verify-bug` or via `/triage` for batch verification. When writing
+   a confirmed entry into `BUGS.md`, read the format and existing
+   entries at the top of that file first and match the tone exactly —
+   plain English, no bullet lists, two short paragraphs per bug.
 9. **observability-reviewer** (Sonnet). Audits logging coverage:
    every mutation, auth event, permission denial, and AI call must
    produce a row in `audit_logs` with no PII / secret / content
@@ -434,7 +469,7 @@ re-litigate):
 
 A feature is done when **all** of the following are true:
 
-1. Code is committed with a message per §4.
+1. Code is committed with a message per section 4.
 2. `pnpm typecheck && pnpm lint` is clean.
 3. `pnpm test:tenant-isolation` is green if the change touched any
    tenant-scoped path.
@@ -442,5 +477,5 @@ A feature is done when **all** of the following are true:
 5. If the change touches auth, RLS, AI, file uploads, or search:
    `security-reviewer` has reviewed the diff and any findings are
    either fixed or recorded in `BUGS.md` with a fix commit SHA.
-6. Logging requirements per §8 are satisfied for any new mutation,
+6. Logging requirements per section 8 are satisfied for any new mutation,
    auth event, permission denial, or AI call.

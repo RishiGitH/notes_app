@@ -418,6 +418,21 @@ export const noteVersions = pgTable(
 // INSERT: note author or org admin can create a share.
 // UPDATE: note author or org admin can change permissions.
 // DELETE: note author, org admin, or the recipient themselves (unsubscribe).
+//
+// ⚠ RLS SELECT policy caveat (see 0003_fix_note_shares_recursion.sql):
+// The SELECT policy is simplified to `user_id = auth.uid()` to break the
+// circular dependency (notes SELECT checks note_shares, so note_shares
+// SELECT cannot check notes). This means:
+//
+//   - A note author querying note_shares for their own note gets 0 rows
+//     unless they are also a share recipient.
+//   - An org admin gets 0 rows for notes they don't own or aren't shared on.
+//
+// Any Server Action or route that lists shares on a note (e.g. the Share
+// panel) MUST use the service-role client (getDirectDb / admin client),
+// not the user-scoped client. Add a comment at each call site:
+//   // note_shares SELECT policy is user_id = auth.uid() only — must use
+//   // service role to list all shares on a note. See schema.ts note_shares.
 
 export const noteShares = pgTable(
   "note_shares",

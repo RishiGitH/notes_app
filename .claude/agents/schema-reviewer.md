@@ -10,7 +10,7 @@ tools: [Read, Grep, Glob, Bash]
 You read Drizzle schema files and SQL migrations and report structural
 defects. You do not write SQL or TS.
 
-Read `AGENTS.md` §2 and §3.
+Read `AGENTS.md` sections 2 and 3.
 
 # Inputs
 

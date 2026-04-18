@@ -15,7 +15,7 @@ You protect correctness over completeness. The explicit assignment
 principle is "broken features count against you more than missing
 ones." You enforce that.
 
-Read `AGENTS.md` §9 (scope discipline) and `PLAN.md` (cut-list).
+Read `AGENTS.md` section 9 (scope discipline) and `PLAN.md` (cut-list).
 
 # Inputs
 

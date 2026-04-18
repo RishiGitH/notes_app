@@ -6,6 +6,68 @@ system.
 
 ---
 
+## Visual reference — Notion-inspired
+
+The target aesthetic is **Notion-like**: generous whitespace, muted
+borders (`border` token), system font stack, subtle hover states,
+restraint. Agents know this vocabulary — saying "Notion-inspired with
+shadcn primitives" is enough.
+
+**Do not** chase pixel fidelity. Use the screenshots below as
+structural and proportional references only — not colour references.
+All colours must use shadcn semantic tokens. All spacing must be
+Tailwind defaults.
+
+### Screenshots to attach when kicking off Phase 3B
+
+Attach all of these to the `ui-builder` session at `/phase-start 3B`:
+
+| # | What to screenshot | Source | Used for |
+|---|---|---|---|
+| 1 | Sidebar — workspace switcher top, nav middle, user menu bottom | notion.so (your workspace) | Shell layout, all pages |
+| 2 | Note detail header — title, breadcrumb, Share + menu top-right, "Edited by X" metadata row | notion.so, any note | Page 5 note detail |
+| 3 | Empty page state — centered typography only, no illustration | notion.so, blank new page | Empty states across all pages |
+| 4 | Share dialog — visibility selector top, people list with per-row permission dropdown | notion.so, Share button | Page 13 share panel |
+| 5 | Settings layout — left-rail sub-nav + main pane (Workspace / Members) | notion.so Settings | Pages 9–10 members + org settings |
+| 6 | Search / Cmd-K — result list with icon, title, context snippet | notion.so Cmd-K | Page 8 search |
+| 7 | GitHub PR diff — two-column, line numbers, +/- colouring | github.com any PR Files tab | Page 7 diff view |
+| 8 | Dense table with filter bar — filter controls above, table rows below, column sort indicators | tanstack.com/table examples or Linear | Pages 4, 6, 9 list tables |
+
+### Prompt to include with the screenshots
+
+> Match the **feel** of these Notion screenshots: generous whitespace,
+> muted borders, system fonts, subtle hover states, restraint. Do NOT
+> match pixel values. All colours use shadcn semantic tokens
+> (`bg-background`, `text-muted-foreground`, `border`). All spacing
+> uses Tailwind defaults (`gap-2`, `gap-4`, `gap-6`).
+>
+> - Screenshots 1-3: shell + note page feel. Use shadcn `Sidebar` primitive.
+> - Screenshot 4: share dialog. Use shadcn `Dialog` + `Select` + `Avatar`.
+> - Screenshot 5: settings sub-nav. Use shadcn `Tabs` vertical orientation.
+> - Screenshot 6: search page. Use shadcn `Command` primitive.
+> - Screenshot 7: diff view. `react-diff-viewer-continued` with `splitView={true}`.
+> - Screenshot 8: all list pages. Filter bar above, TanStack Table below, `muted` hover token.
+>
+> No custom CSS. No invented Tailwind colours. No illustrations.
+
+### Three high-payoff polish additions (nearly free)
+
+1. **Markdown typography.** Install `@tailwindcss/typography`. Apply
+   `prose prose-neutral max-w-none prose-headings:font-semibold
+   prose-p:leading-relaxed` to the note body render. Zero design
+   decisions, significant visual improvement.
+
+2. **Consistent icons.** Every non-text-only button gets a 16px
+   lucide-react icon, left-aligned. Single stroke weight throughout
+   the app.
+
+3. **Global Cmd-K palette (stretch goal).** shadcn `Command` primitive.
+   Lists: recent notes + quick actions (New note, Search, Settings).
+   ~1 hour of work. Move to `DEFERRED.md` if time is short — but
+   attempt it, it is the single best "this app feels real" signal.
+
+---
+
 ## Component library
 
 - **Primitives:** shadcn/ui (Button, Input, Textarea, Dialog, Sheet,

@@ -16,7 +16,7 @@ Treat each feature as a security surface first and a UX surface
 second.
 
 Read `AGENTS.md` sections 1, 2, 3, 4, 5, 6, 8, 10, and the
-AI-safety and file-upload rules in §2 specifically.
+AI-safety and file-upload rules in section 2 specifically.
 
 # Scope
 
@@ -45,7 +45,7 @@ You must not edit:
 
 # Procedure
 
-1. Append a `NOTES.md` plan entry per AGENTS.md §5.
+1. Append a `NOTES.md` plan entry per AGENTS.md section 5.
 2. For search:
    - Request a Drizzle migration from `lead-backend` (via NOTES.md
      request block) that adds a `tsvector` GENERATED ALWAYS column
@@ -91,7 +91,13 @@ You must not edit:
      `/ai/summarize`, `/ai/accept`). Use `test-writer` for
      generation; review the output.
 6. Run `pnpm typecheck && pnpm lint && pnpm test:tenant-isolation`.
-7. Append NOTES.md Result entry. Commit per AGENTS.md §4.
+7. Commit per AGENTS.md section 4 (group related work; follow the
+   per-phase commit budget).
+8. Append the `NOTES.md` "Result" block: what was done, decisions,
+   deferrals, blockers, and a `**Commits:**` list with 7-char short
+   SHAs from `git log --oneline` for every commit this task produced.
+   Then commit that NOTES.md update with message
+   `notes: result for <task title>`.
 
 # Hard rules
 
@@ -111,4 +117,4 @@ You must not edit:
 
 - Code under the scope above.
 - Migrations only as described (coordinate with `lead-backend`).
-- Commits per §4. NOTES.md plan and result entries.
+- Commits per section 4. NOTES.md plan and result entries.

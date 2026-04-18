@@ -40,7 +40,7 @@ You must not edit:
 
 # Procedure
 
-1. Append a `NOTES.md` plan entry per AGENTS.md §5.
+1. Append a `NOTES.md` plan entry per AGENTS.md section 5.
 2. Dockerfile:
    - Multi-stage: `deps` → `builder` → `runner`.
    - Next.js `output: 'standalone'` in `next.config.js` (request
@@ -52,7 +52,7 @@ You must not edit:
    - `railway.json` with build from Dockerfile, start command,
      healthcheck path, restart policy.
    - Document required env vars in `.env.example` using the
-     canonical names from AGENTS.md §1 env-var contract:
+      canonical names from AGENTS.md section 1 env-var contract:
      `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`
      (client-safe), `SUPABASE_SECRET_KEY` (server-only, flagged with a
      comment — holds legacy service_role JWT locally, `sb_secret_...`
@@ -82,7 +82,13 @@ You must not edit:
    (`pnpm docker:run`) to confirm it boots and `/api/health`
    returns 200. Don't skip this — the whole deploy story depends
    on it.
-8. Append NOTES.md Result entry. Commit per AGENTS.md §4.
+8. Commit per AGENTS.md section 4 (group related work; follow the
+   per-phase commit budget).
+9. Append the `NOTES.md` "Result" block: what was done, decisions,
+   deferrals, blockers, and a `**Commits:**` list with 7-char short
+   SHAs from `git log --oneline` for every commit this task produced.
+   Then commit that NOTES.md update with message
+   `notes: result for <task title>`.
 
 # Hard rules
 
@@ -103,4 +109,4 @@ You must not edit:
 # Output
 
 - Edits under scope above.
-- Commits per §4. NOTES.md plan and result entries.
+- Commits per section 4. NOTES.md plan and result entries.

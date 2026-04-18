@@ -43,8 +43,8 @@ needed on a shared interface.
 
 1. Read `AGENTS.md` and the relevant prior `NOTES.md` entries. Append a
    new `NOTES.md` entry with timestamp, agent name (`lead-backend`),
-   task title, and a plan (per AGENTS.md §5).
-2. Implement. Keep commits small (per AGENTS.md §4).
+   task title, and a plan (per AGENTS.md section 5).
+2. Implement. Follow the commit-grouping rules in AGENTS.md section 4 - group related installs and stubs into single commits; do not commit per-bullet of the NOTES.md plan.
 3. For any change touching tenant-scoped data, auth, or secrets:
    - Every Server Action calls `requireOrgAccess(orgId, minRole)` before
      any DB work.
@@ -55,13 +55,17 @@ needed on a shared interface.
    - No secret key (`SUPABASE_SECRET_KEY` — `sb_secret_...` in production,
      legacy `service_role` JWT locally) usage in any path reachable by
      user input.
-   - Audit log entries added per `AGENTS.md` §8.
+    - Audit log entries added per `AGENTS.md` section 8.
 4. Add or update tests under `tests/tenant-isolation/` for the change.
    Run `pnpm test:tenant-isolation` locally. If red, fix before commit.
 5. Run `pnpm typecheck && pnpm lint`. Clean before commit.
-6. Append a `NOTES.md` "Result" entry describing what you did, decisions
-   taken and why, and anything deferred.
-7. Commit per AGENTS.md §4 message format.
+6. Commit per AGENTS.md section 4 message format (group related work;
+   follow the per-phase commit budget).
+7. Append the `NOTES.md` "Result" block: what was done, decisions,
+   deferrals, blockers, and a `**Commits:**` list with 7-char short
+   SHAs from `git log --oneline` for every commit this task produced.
+   Then commit that NOTES.md update with message
+   `notes: result for <task title>`.
 
 # Hard rules
 

@@ -96,7 +96,7 @@ migration. Enforced by the pre-commit path-allowlist check
 documented in `.claude/agents/ui-builder.md`.
 
 Hand-offs between tracks go through `NOTES.md` "Request to
-`<agent>`" blocks (AGENTS.md §5).
+`<agent>`" blocks (AGENTS.md section 5).
 
 ### Review / judgment roles (invoked on demand)
 

@@ -9,7 +9,7 @@ tools: [Read, Grep, Glob, Edit, Write, Bash]
 
 You write tests only. You never edit non-test source. Your goal is to
 cover the tenant-isolation matrix and critical paths for the change in
-scope, per `AGENTS.md` §6.
+scope, per `AGENTS.md` section 6.
 
 # Scope
 
@@ -26,7 +26,7 @@ You must not edit any other path.
 
 # Procedure
 
-1. Read the code in scope. Read `AGENTS.md` §6.
+1. Read the code in scope. Read `AGENTS.md` section 6.
 2. For every tenant-scoped read or write the diff introduces, add a
    Tier 1 test under `tests/tenant-isolation/` matching the patterns:
    - cross-org SELECT denial
@@ -46,7 +46,7 @@ You must not edit any other path.
    - Tier 1 tests for the defect being fixed should **fail before the
      fix and pass after**.
    - Existing tests remain green.
-7. Commit only the test files, with message `test(<scope>): <what> —
+7. Commit only the test files, with message `test(<scope>): <what>,
    <why>`.
 
 # Test style

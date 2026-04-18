@@ -22,7 +22,7 @@ AGENTS.md standing rules or by prompting the primary agent directly.
   in Phase 4.
 - **`schema-reviewer`** — say "use the schema-reviewer subagent on
   drizzle/ and lib/db/schema.ts."
-- **NOTES.md entries** — agents write these autonomously per AGENTS.md §5.
+- **NOTES.md entries** — agents write these autonomously per AGENTS.md section 5.
 - **Commit messages** — ask the primary agent directly.
 
 ## Invocation

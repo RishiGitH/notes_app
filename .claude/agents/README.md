@@ -45,8 +45,8 @@ source outside `tests/`):
 - `bug-verifier` is the oracle: a claim becomes a `BUGS.md` candidate
   only if `bug-verifier` can express it as a failing test. Otherwise it
   is a suspicion and does not enter `BUGS.md`.
-- Implementer agents commit per `AGENTS.md` §4 and append to `NOTES.md`
-  per §5 — standing rule, not triggered externally.
+- Implementer agents commit per AGENTS.md section 4 and append to `NOTES.md`
+  per section 5 — standing rule, not triggered externally.
 
 ## Invocation
 

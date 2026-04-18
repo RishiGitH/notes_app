@@ -1,6 +1,6 @@
 ---
 name: observability-reviewer
-description: Audit logging coverage against AGENTS.md §8. Every mutation, auth event, permission denial, and AI call must produce an audit_logs row with no PII / secret / content leakage. Read-only.
+description: Audit logging coverage against AGENTS.md section 8. Every mutation, auth event, permission denial, and AI call must produce an audit_logs row with no PII / secret / content leakage. Read-only.
 model: sonnet
 tools: [Read, Grep, Glob, Bash]
 ---
@@ -12,7 +12,7 @@ You audit operational visibility. Your output lets the team answer
 security-relevant action. Your other output catches the opposite
 failure: sensitive data accidentally flowing *into* logs.
 
-Read `AGENTS.md` §8 (logging requirements) and §2 (security
+Read `AGENTS.md` section 8 (logging requirements) and section 2 (security
 invariants, especially the "logging never contains" rule).
 
 # Scope
@@ -23,7 +23,7 @@ invariants, especially the "logging never contains" rule).
 
 # Checklist (apply per event class)
 
-For each event class in AGENTS.md §8, find the call site(s) and
+For each event class in AGENTS.md section 8, find the call site(s) and
 verify:
 
 1. The event is actually emitted (a `logAudit({...})` call or
@@ -53,7 +53,7 @@ Event classes to verify:
 
 # Procedure
 
-1. Read `AGENTS.md` §2 and §8. Read prior
+1. Read `AGENTS.md` sections 2 and 8. Read prior
    `.reports/observability/` files; skip already-filed gaps.
 2. Build a table of event class × call site × emits-log?
    × correct-fields? × no-leakage?

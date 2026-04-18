@@ -3,7 +3,7 @@
 Anything cut from scope goes here with a one-line reason and, if
 applicable, the commit where the decision was taken.
 
-## Global out-of-scope (from PLAN.md §6)
+## Global out-of-scope (from PLAN.md section 6)
 
 - Real-time collaborative editing (CRDT, OT, websocket sync).
 - Rich-text WYSIWYG editor.

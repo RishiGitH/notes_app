@@ -13,7 +13,7 @@ NOTES.md entry and without the invoker seeing the exit gate.
    argument (e.g. `Phase 3A — Notes core`). If no match, stop and
    list the available phase identifiers from `PLAN.md`.
 
-2. Read `AGENTS.md` §5 (NOTES.md protocol), §6 (testing), §10
+2. Read `AGENTS.md` section 5 (NOTES.md protocol), section 6 (testing), section 10
    (definition of done).
 
 3. Determine the executing agent identity:
@@ -36,7 +36,9 @@ NOTES.md entry and without the invoker seeing the exit gate.
    Use the current UTC timestamp in `YYYY-MM-DDTHH:MM:SSZ` form.
 
 5. Commit the NOTES.md append with message
-   `notes: start phase $ARGUMENTS — <phase title>`.
+   `notes: start phase $ARGUMENTS, <phase title>`.
+   This journal-start commit counts toward the phase's commit budget
+   in AGENTS.md section 4.
 
 6. Print:
    - Phase title
