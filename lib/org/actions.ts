@@ -65,6 +65,13 @@ export async function createOrgAction(
     .maybeSingle();
 
   if (existing) {
+    await withContext(ctx, () =>
+      logAudit({
+        action: "org.create.failed",
+        resourceType: "org",
+        metadata: { reason: "slug_taken", slug: parsed.data.slug },
+      }),
+    );
     return "Slug is already taken";
   }
 
@@ -78,6 +85,13 @@ export async function createOrgAction(
     .single();
 
   if (orgError || !org) {
+    await withContext(ctx, () =>
+      logAudit({
+        action: "org.create.failed",
+        resourceType: "org",
+        metadata: { reason: "db_error" },
+      }),
+    );
     return orgError?.message ?? "Failed to create organization";
   }
 
@@ -88,6 +102,14 @@ export async function createOrgAction(
   if (memberError) {
     // Rollback-ish: delete the org we just created.
     await admin.from("organizations").delete().eq("id", org.id);
+    await withContext({ ...ctx, orgId: org.id }, () =>
+      logAudit({
+        action: "org.create.failed",
+        resourceType: "org",
+        resourceId: org.id,
+        metadata: { reason: "membership_insert_failed" },
+      }),
+    );
     return memberError.message;
   }
 

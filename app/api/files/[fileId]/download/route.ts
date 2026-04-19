@@ -24,7 +24,7 @@ import { headers } from "next/headers";
 import { getAdminSupabase } from "@/lib/auth/server";
 import { requireUser } from "@/lib/auth/server";
 import { getFileInfo } from "@/lib/files/actions";
-import { logAudit } from "@/lib/logging/audit";
+import { logAudit, logError } from "@/lib/logging/audit";
 import { withContext } from "@/lib/logging/request-context";
 import { STORAGE_BUCKET } from "@/lib/files/constants";
 
@@ -73,7 +73,11 @@ export async function GET(
       .createSignedUrl(fileInfo.path, 60);
 
     if (signError || !signedData?.signedUrl) {
-      console.error("[download] signed URL error:", signError?.message);
+      console.error("[download] signed URL error:", {
+        requestId: ctx.requestId,
+        error: signError?.message,
+      });
+      await logError("files", signError ?? new Error("signed URL generation failed"), fileId);
       return NextResponse.json(
         { error: "Could not generate download link" },
         { status: 500 },

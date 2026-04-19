@@ -6,7 +6,6 @@
 // (AGENTS.md section 8 and section 11)
 //
 // This module is Node runtime only (uses AsyncLocalStorage via request-context).
-// Server Actions that call logAudit() must export: export const runtime = 'nodejs';
 
 import { getAdminSupabase } from "@/lib/auth/server";
 import { getRequestContext } from "@/lib/logging/request-context";
@@ -51,4 +50,23 @@ export async function logAudit(entry: AuditEntry): Promise<void> {
     // Swallow: logAudit must never propagate errors to the caller.
     console.error("[audit] unexpected error:", err);
   }
+}
+
+// logError emits an error.5xx audit row per AGENTS.md section 8.
+// Call this in catch blocks for unexpected server errors that would result
+// in a 5xx response. Never logs the error message if it might contain
+// user content — only the error name/code.
+export async function logError(
+  resourceType: string,
+  err: unknown,
+  resourceId?: string,
+): Promise<void> {
+  const errorName =
+    err instanceof Error ? err.name : "UnknownError";
+  await logAudit({
+    action: "error.5xx",
+    resourceType,
+    resourceId,
+    metadata: { errorName },
+  });
 }
