@@ -124,4 +124,23 @@ Update the response to a genric error message and fixed it.
 ---
 
 
+---                                                                                                                                                                                                                                
+  The Bug — Infinite Redirect Loop                                                                                                                                                                                                   
+                                                                                                                                                                                                                                     
+  Imagine a bouncer at a door who says "you need a wristband to enter." You ask where to get the wristband. He says "room 5." You walk to room 5. The same bouncer is guarding room 5. He says "you need a wristband to enter." He   
+  sends you to room 5 again. Forever.                                                                                                                                                                                                
+                                                                  
+  That's exactly what was happening:                                                                                                                                                                                                 
+  - New user signs up → no org yet → app layout says "go create an org at /org/create"
+  - Browser goes to /org/create → app layout runs again → still no org → redirects to /org/create again                                                                                                                              
+  - Hundreds of times per second → browser gives up → "This site can't be reached"                     
+                                                                                                                                                                                                                                     
+  The Fix                                                         
+                                                                                                                                                                                                                                     
+  Instead of the layout redirecting, it now just steps aside and shows the page directly when the user has no org. The create-org page has its own full-screen design that doesn't need the sidebar, so it looks fine. Every other   
+  protected page (notes, dashboard, etc.) already has its own redirect to /org/create built in — so new users are still guided there when they try to access anything they shouldn't yet.                                            
+                                                                                                                                                                                                                                     
+  Commit: 858a03f | Severity: high (every new user was completely blocked)     
+
+
 
