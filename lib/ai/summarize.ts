@@ -25,7 +25,7 @@ import { requireUser, getAdminSupabase, getServerSupabase } from "@/lib/auth/ser
 import { requireOrgAccess, canEditNote } from "@/lib/security/permissions";
 import { logAudit } from "@/lib/logging/audit";
 import { withContext } from "@/lib/logging/request-context";
-import { getAnthropicClient, getModelId } from "@/lib/ai/client";
+import { createDoChatCompletion, getModelId } from "@/lib/ai/client";
 import {
   summaryOutputSchema,
   acceptSummaryInput,
@@ -43,7 +43,7 @@ async function buildContext(userId: string, orgId?: string) {
   };
 }
 
-// generateSummary: call the Anthropic API with exactly one note's content
+// generateSummary: call the configured inference API with exactly one note's content
 // and persist the validated draft into ai_summaries.
 //
 // Returns the new ai_summaries row id.
@@ -99,7 +99,7 @@ export async function generateSummary(noteId: string): Promise<string> {
 
     if (!version) throw new Error("Note version not found");
 
-    // Cap content length before sending to Anthropic.
+    // Cap content length before sending to the model provider.
     // Without a cap, a user can save an arbitrarily large note and trigger
     // unbounded token charges per generateSummary call (cost amplification).
     // 20 000 chars ≈ 5 000 tokens — plenty for a meaningful summary and well
@@ -115,7 +115,6 @@ export async function generateSummary(noteId: string): Promise<string> {
     }
 
     const model = getModelId();
-    const client = getAnthropicClient();
 
     const systemPrompt = `You are a note summarizer. Given a note's title and content, produce a structured JSON summary with these exact fields:
 {
@@ -131,17 +130,14 @@ Return ONLY the JSON object. No markdown fences. No explanation.`;
     // by appending to the last line of the note body.
     const userMessage = `Title: ${version.title}\n\n<note_content>\n${rawContent}\n</note_content>`;
 
-    const message = await client.messages.create({
-      model,
-      max_tokens: 1024,
+    const rawText = await createDoChatCompletion({
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      maxTokens: 1024,
       temperature: 0,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
     });
-
-    // Extract text content from the response.
-    const textBlock = message.content.find((b) => b.type === "text");
-    const rawText = textBlock?.type === "text" ? textBlock.text : "";
 
     // Parse and validate. (AGENTS.md item 6)
     let parsed: ReturnType<typeof summaryOutputSchema.safeParse>;
