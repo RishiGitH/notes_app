@@ -29,6 +29,30 @@ import { logAudit } from "@/lib/logging/audit";
 import { withContext } from "@/lib/logging/request-context";
 import { searchNotesInput, type SearchNoteResult } from "@/lib/search/schemas";
 
+// Sentinel values used as ts_headline StartSel/StopSel. They use ASCII control
+// characters (STX/ETX, codepoints 2 and 3) that valid Unicode text input will
+// never contain after standard input validation and DB storage. Using these
+// sentinels allows us to HTML-escape the entire ts_headline output safely and
+// then substitute real <mark> tags without risk of re-interpreting user content.
+const SNIPPET_MARK_OPEN = "\x02MARK\x03";
+const SNIPPET_MARK_CLOSE = "\x02/MARK\x03";
+
+// sanitizeSnippet: HTML-escape all user-authored content in the snippet, then
+// restore the literal <mark>/<mark> tags that surround matched lexemes.
+// This is the fix for F-0009 (stored XSS via ts_headline output).
+function sanitizeSnippet(raw: string): string {
+  const escaped = raw
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  // The sentinels are not HTML-special so they survive the escape chain
+  // unchanged, allowing us to substitute real mark tags now.
+  return escaped
+    .replace(new RegExp(SNIPPET_MARK_OPEN, "g"), "<mark>")
+    .replace(new RegExp(SNIPPET_MARK_CLOSE, "g"), "</mark>");
+}
+
 export async function searchNotes(
   rawInput: unknown,
 ): Promise<SearchNoteResult[]> {
@@ -61,7 +85,18 @@ export async function searchNotes(
     //
     // We join to note_versions to get the content for snippets; the join
     // condition is current_version_id so we always hit the current version.
+    //
+    // XSS prevention (F-0009): ts_headline does NOT HTML-escape the surrounding
+    // document text — only the StartSel/StopSel delimiters are inserted verbatim.
+    // We use unique non-HTML sentinels (\x02MARK\x03 / \x02/MARK\x03) that
+    // cannot collide with any printable user content, then HTML-escape the full
+    // output with a chain of regexp replacements, and finally substitute real
+    // <mark>/</mark> tags. The sentinels are ASCII control characters (STX/ETX)
+    // which Postgres will faithfully return but user-authored note content will
+    // never contain (input is validated and stored as Unicode text without these
+    // codepoints). This is the canonical safe pattern for ts_headline + HTML.
     const tsQuery = sql`plainto_tsquery('english', ${query})`;
+    const snippetOptions = `MaxWords=30, MinWords=10, StartSel=${SNIPPET_MARK_OPEN}, StopSel=${SNIPPET_MARK_CLOSE}`;
 
     const rows = await db
       .select({
@@ -74,7 +109,7 @@ export async function searchNotes(
             'english',
             coalesce(${noteVersions.content}, ''),
             ${tsQuery},
-            'MaxWords=30, MinWords=10, StartSel=<mark>, StopSel=</mark>'
+            ${snippetOptions}
           )
         `,
       })
@@ -106,7 +141,7 @@ export async function searchNotes(
     return rows.map((r) => ({
       id: r.id,
       title: r.title,
-      snippet: r.snippet,
+      snippet: r.snippet ? sanitizeSnippet(r.snippet) : r.snippet,
       orgId: r.orgId,
       updatedAt: r.updatedAt,
     }));
