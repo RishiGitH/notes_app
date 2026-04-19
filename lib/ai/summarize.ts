@@ -13,8 +13,9 @@
 //   ai.summarize.request  — a summary was generated (or rejected due to schema fail)
 //   ai.summarize.accept   — fields were accepted (partial or full)
 //   ai.summarize.reject   — user explicitly rejected the draft
-
-export const runtime = "nodejs";
+//
+// Node runtime: "use server" files always run on Node; export const runtime
+// is not valid in 'use server' modules and has been removed.
 
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { headers } from "next/headers";

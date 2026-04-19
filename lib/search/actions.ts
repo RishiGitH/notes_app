@@ -1,3 +1,5 @@
+"use server";
+
 // FTS search Server Action (Phase 3C, search-ai).
 //
 // AGENTS.md section 2 item 10: "Search queries scope by org_id in SQL in
@@ -14,10 +16,8 @@
 //      may contain PII). (AGENTS.md section 11)
 //
 // Audit event: search.query
-
-"use server";
-
-export const runtime = "nodejs";
+// Node runtime: "use server" files always run on Node; export const runtime
+// is not valid in 'use server' modules and has been removed.
 
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { headers } from "next/headers";

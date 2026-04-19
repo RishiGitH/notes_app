@@ -13,8 +13,9 @@
 // Audit events (AGENTS.md section 8):
 //   file.upload   — a file was uploaded
 //   file.download — a signed URL was issued (via proxy route)
-
-export const runtime = "nodejs";
+//
+// Node runtime: "use server" files always run on Node; export const runtime
+// is not valid in 'use server' modules and has been removed.
 
 import { and, eq, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
