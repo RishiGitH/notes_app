@@ -10,7 +10,7 @@ export const VISIBILITY_VARIANTS: Record<string, "outline" | "secondary" | "defa
 export const VISIBILITY_LABELS: Record<string, string> = {
   private: "Private",
   org: "Org",
-  public_in_org: "Public",
+  public_in_org: "Org (public)",
 };
 
 export function formatDate(iso: string): string {

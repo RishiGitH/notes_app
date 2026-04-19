@@ -48,7 +48,7 @@ interface SharePanelProps {
 const VISIBILITY_LABELS: Record<string, string> = {
   private: "Private — only you",
   org: "Org — all members",
-  public_in_org: "Public — anyone with link",
+  public_in_org: "Public — all org members",
 };
 
 const PERMISSION_LABELS: Record<string, string> = {
