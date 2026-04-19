@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +20,6 @@ import {
 import { getBrowserSupabase } from "@/lib/auth/client";
 
 export default function SignUpPage() {
-  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,8 +48,7 @@ export default function SignUpPage() {
       console.error("[sign-up] finalizeSignUpAction:", syncError);
     }
 
-    router.replace("/org/create");
-    router.refresh();
+    window.location.replace("/org/create");
   }
 
   return (

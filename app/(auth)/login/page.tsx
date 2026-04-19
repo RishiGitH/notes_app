@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,7 +35,6 @@ export default function LoginPage() {
 }
 
 function LoginPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,8 +65,7 @@ function LoginPageContent() {
     }
 
     const nextPath = sanitizeNextPath(searchParams.get("next"), "/notes");
-    router.replace(nextPath);
-    router.refresh();
+    window.location.replace(nextPath);
   }
 
   return (
