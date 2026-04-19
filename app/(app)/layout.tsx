@@ -27,7 +27,13 @@ export default async function AppLayout({
     redirect("/login");
   }
 
-  const admin = getAdminSupabase();
+  let admin;
+  try {
+    admin = getAdminSupabase();
+  } catch (e) {
+    console.error("[AppLayout] getAdminSupabase failed:", e instanceof Error ? e.message : e);
+    redirect("/login");
+  }
 
   const { data: memberships } = await admin
     .from("memberships")

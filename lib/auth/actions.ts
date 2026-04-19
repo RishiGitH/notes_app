@@ -123,14 +123,24 @@ export async function signUpAction(
   }
 
   const user = data.user!;
-  const admin = getAdminSupabase();
+
+  let admin;
+  try {
+    admin = getAdminSupabase();
+  } catch (e) {
+    console.error("[signUp] getAdminSupabase failed:", e instanceof Error ? e.message : e);
+    return "Server configuration error. Please try again later.";
+  }
 
   // Mirror user into public.users (auth trigger is deferred to a future
   // migration; we insert manually for now).
-  await admin.from("users").upsert(
+  const { error: upsertError } = await admin.from("users").upsert(
     { id: user.id, email: user.email!, updated_at: new Date().toISOString() },
     { onConflict: "id" },
   );
+  if (upsertError) {
+    console.error("[signUp] users upsert failed:", upsertError.message, upsertError.code);
+  }
 
   await withContext(ctx, () =>
     logAudit({
