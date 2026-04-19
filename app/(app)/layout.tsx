@@ -68,6 +68,7 @@ export default async function AppLayout({
       httpOnly: true,
       sameSite: "lax",
       path: "/",
+      secure: process.env.NODE_ENV === "production",
     });
   }
 

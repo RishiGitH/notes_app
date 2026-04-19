@@ -106,6 +106,21 @@ export async function generateSummary(noteId: string): Promise<string> {
 
     if (!version) throw new Error("Note version not found");
 
+    // Cap content length before sending to Anthropic.
+    // Without a cap, a user can save an arbitrarily large note and trigger
+    // unbounded token charges per generateSummary call (cost amplification).
+    // 20 000 chars ≈ 5 000 tokens — plenty for a meaningful summary and well
+    // within claude-sonnet context, while bounding per-call cost.
+    // The cap is applied BEFORE the API call so the check is synchronous and
+    // testable without a live Anthropic connection.
+    const CONTENT_CHAR_LIMIT = 20_000;
+    const rawContent = version.content ?? "";
+    if (rawContent.length > CONTENT_CHAR_LIMIT) {
+      throw new Error(
+        `Note content exceeds the ${CONTENT_CHAR_LIMIT.toLocaleString()}-character limit for AI summarization. Shorten the note before generating a summary.`,
+      );
+    }
+
     const model = getModelId();
     const client = getAnthropicClient();
 
@@ -117,7 +132,11 @@ export async function generateSummary(noteId: string): Promise<string> {
 }
 Return ONLY the JSON object. No markdown fences. No explanation.`;
 
-    const userMessage = `Title: ${version.title}\n\nContent:\n${version.content}`;
+    // Wrap user-supplied content in unambiguous delimiters so an adversarial
+    // note cannot break out of the content role and override the system prompt.
+    // The closing tag is on a separate line so injected text cannot reach it
+    // by appending to the last line of the note body.
+    const userMessage = `Title: ${version.title}\n\n<note_content>\n${rawContent}\n</note_content>`;
 
     const message = await client.messages.create({
       model,

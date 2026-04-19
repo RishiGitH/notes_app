@@ -37,10 +37,15 @@ async function canManageShares(
 ): Promise<boolean> {
   const admin = getAdminSupabase();
 
+  // IMPORTANT: scope by org_id so an admin of org B cannot satisfy this check
+  // by referencing a noteId that belongs to org A. Without the org_id filter
+  // the note lookup succeeds cross-tenant and the subsequent membership check
+  // (which uses the caller-supplied orgId) passes for an org-B admin.
   const { data: note } = await admin
     .from("notes")
     .select("author_id")
     .eq("id", noteId)
+    .eq("org_id", orgId)
     .is("deleted_at", null)
     .maybeSingle();
 

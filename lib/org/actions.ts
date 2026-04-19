@@ -97,6 +97,7 @@ export async function createOrgAction(
     httpOnly: true,
     sameSite: "lax",
     path: "/",
+    secure: process.env.NODE_ENV === "production",
   });
 
   await withContext({ ...ctx, orgId: org.id }, () =>
@@ -125,6 +126,7 @@ export async function switchOrgAction(orgId: string): Promise<void> {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
+    secure: process.env.NODE_ENV === "production",
   });
 
   await withContext({ ...ctx, orgId }, () =>

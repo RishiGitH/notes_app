@@ -401,6 +401,11 @@ export async function saveNoteAction(params: {
   if (insertError) return { error: insertError.message };
 
   // Update the note to point at the new version.
+  // Include .eq("org_id", orgId) for defense-in-depth consistency with
+  // softDeleteNoteAction and changeVisibilityAction, both of which scope
+  // the UPDATE by org_id. The prior note.org_id !== orgId check at
+  // requireOrgAccess makes this unexploitable, but omitting it is
+  // an inconsistency that would mask a future logic regression.
   const { error: updateError } = await admin
     .from("notes")
     .update({
@@ -408,7 +413,8 @@ export async function saveNoteAction(params: {
       title,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", noteId);
+    .eq("id", noteId)
+    .eq("org_id", orgId);
 
   if (updateError) return { error: updateError.message };
 
