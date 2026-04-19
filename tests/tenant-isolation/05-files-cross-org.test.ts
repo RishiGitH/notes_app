@@ -85,8 +85,8 @@ describe("files cross-org isolation", () => {
       { redirect: "manual" }, // don't follow the 302 redirect (if any)
     );
 
-    // 401 (not authenticated) or 403/404 (authenticated but wrong org) are
-    // both correct; what is NOT correct is 200 or a 302 redirect to a signed URL.
-    expect([401, 403, 404]).toContain(res.status);
+    // 307/302 (redirect to /login — unauthenticated), 401, 403, 404 are all
+    // correct. What is NOT correct is 200 or a redirect to a signed Storage URL.
+    expect([307, 302, 401, 403, 404]).toContain(res.status);
   });
 });

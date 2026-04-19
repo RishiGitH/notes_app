@@ -64,6 +64,13 @@
       "when": 1776600000000,
       "tag": "0008_notes_fts",
       "breakpoints": false
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776610000000,
+      "tag": "0009_storage_rls",
+      "breakpoints": false
     }
   ]
 }
