@@ -21,8 +21,6 @@ import { requireUser, getAdminSupabase, getServerSupabase } from "@/lib/auth/ser
 import { requireOrgAccess, canEditNote } from "@/lib/security/permissions";
 import { withContext, type RequestContext } from "@/lib/logging/request-context";
 import { logAudit } from "@/lib/logging/audit";
-import { v4 as uuidv4 } from "uuid";
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function buildCtx(userId: string): Promise<RequestContext> {
@@ -47,41 +45,49 @@ export async function createNoteAction(
   await withContext(ctx, () => requireOrgAccess(orgId, "member"));
 
   const admin = getAdminSupabase();
-  const noteId = uuidv4();
-  const versionId = uuidv4();
 
   // Step 1: insert the note with no current_version_id yet.
-  // Slim window: note exists before its first version. The application
-  // gate (canEditNote) treats a note as editable by its author regardless.
-  const { error: noteError } = await admin.from("notes").insert({
-    id: noteId,
-    org_id: orgId,
-    author_id: user.id,
-    visibility: "private",
-    title: "",
-    current_version_id: null,
-  });
+  // IDs are minted by Postgres gen_random_uuid() (schema DEFAULT) — no
+  // application-layer UUID generation (F-0010 fix; uuid package is banned).
+  const { data: noteRow, error: noteError } = await admin
+    .from("notes")
+    .insert({
+      org_id: orgId,
+      author_id: user.id,
+      visibility: "private",
+      title: "",
+      current_version_id: null,
+    })
+    .select("id")
+    .single();
 
   if (noteError) {
     return { error: noteError.message };
   }
 
+  const noteId = noteRow.id as string;
+
   // Step 2: insert the first version (empty content).
-  const { error: versionError } = await admin.from("note_versions").insert({
-    id: versionId,
-    note_id: noteId,
-    org_id: orgId,
-    author_id: user.id,
-    title: "",
-    content: "",
-    version_number: 1,
-  });
+  const { data: versionRow, error: versionError } = await admin
+    .from("note_versions")
+    .insert({
+      note_id: noteId,
+      org_id: orgId,
+      author_id: user.id,
+      title: "",
+      content: "",
+      version_number: 1,
+    })
+    .select("id")
+    .single();
 
   if (versionError) {
     // Best-effort cleanup of the orphaned note.
     await admin.from("notes").delete().eq("id", noteId);
     return { error: versionError.message };
   }
+
+  const versionId = versionRow.id as string;
 
   // Step 3: point the note at its first version.
   const { error: updateError } = await admin
@@ -385,20 +391,25 @@ export async function saveNoteAction(params: {
   }
 
   const newVersionNumber = fetchedVersionNumber + 1;
-  const newVersionId = uuidv4();
 
-  // Insert the new full snapshot version.
-  const { error: insertError } = await admin.from("note_versions").insert({
-    id: newVersionId,
-    note_id: noteId,
-    org_id: orgId,
-    author_id: user.id,
-    title,
-    content,
-    version_number: newVersionNumber,
-  });
+  // Insert the new full snapshot version. ID minted by Postgres gen_random_uuid()
+  // (F-0010 fix — uuid package banned; use RETURNING id pattern).
+  const { data: newVersionRow, error: insertError } = await admin
+    .from("note_versions")
+    .insert({
+      note_id: noteId,
+      org_id: orgId,
+      author_id: user.id,
+      title,
+      content,
+      version_number: newVersionNumber,
+    })
+    .select("id")
+    .single();
 
   if (insertError) return { error: insertError.message };
+
+  const newVersionId = newVersionRow.id as string;
 
   // Update the note to point at the new version.
   // Include .eq("org_id", orgId) for defense-in-depth consistency with
