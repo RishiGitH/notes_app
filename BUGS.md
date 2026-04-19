@@ -220,7 +220,7 @@ The root cause was that `getFileInfo` used the admin (service-role) database cli
 
 ## digital ocean inferenc eicnorrect and dokcer file incorrect condifuration hardcoded port
 
-**high** — fix `81742d6`
+**high** — fix 
 
 Changed digital ocean endpoint in server code to use env var and also fixed the docker file to use env var for port instead of hardcoding it to 3000. 
 
