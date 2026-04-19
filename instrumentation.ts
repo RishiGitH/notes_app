@@ -7,7 +7,7 @@
 // Docs: https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation
 
 export async function register() {
-  // Nothing to initialise at boot for now.
+  console.log(JSON.stringify({ event: "server_start", nodeEnv: process.env.NODE_ENV }));
 }
 
 export function onRequestError(

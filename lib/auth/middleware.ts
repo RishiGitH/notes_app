@@ -30,6 +30,7 @@ function isPublicPath(pathname: string): boolean {
 // withContext() wrapper in lib/logging/request-context.ts for Node-runtime
 // Server Actions that call logAudit().
 export async function updateSession(request: NextRequest) {
+  const start = Date.now();
   const requestId = ulid();
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -59,7 +60,10 @@ export async function updateSession(request: NextRequest) {
   // can correlate the pair.
   response.headers.set("x-request-id", requestId);
 
-  if (!url || !publishable) return response;
+  if (!url || !publishable) {
+    console.log(JSON.stringify({ event: "request", method: request.method, path: request.nextUrl.pathname, ms: Date.now() - start, warn: "no_supabase_env" }));
+    return response;
+  }
 
   const supabase = createServerClient(url, publishable, {
     cookies: {
@@ -87,8 +91,10 @@ export async function updateSession(request: NextRequest) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("next", pathname);
+    console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: "redirect_login" }));
     return NextResponse.redirect(loginUrl);
   }
 
+  console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: user ? "ok" : "public" }));
   return response;
 }
