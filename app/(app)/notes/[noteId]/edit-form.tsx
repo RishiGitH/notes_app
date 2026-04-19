@@ -57,13 +57,19 @@ export function EditForm({
   function onSubmit(values: EditValues) {
     if (saveBlocked) return;
     startTransition(async () => {
-      const result = await saveNoteAction({
-        noteId,
-        orgId,
-        title: values.title,
-        content: values.content,
-        expectedVersionNumber: latestVersion,
-      });
+      let result;
+      try {
+        result = await saveNoteAction({
+          noteId,
+          orgId,
+          title: values.title,
+          content: values.content,
+          expectedVersionNumber: latestVersion,
+        });
+      } catch {
+        toast.error("Network error — try again. Your edits are preserved.");
+        return;
+      }
 
       if ("conflict" in result) {
         toast.error("Conflict — reload to see the latest version", {

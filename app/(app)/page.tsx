@@ -4,7 +4,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth/server";
 import { requireOrgAccess } from "@/lib/security/permissions";
 import { withContext } from "@/lib/logging/request-context";
-import { listNotesAction, createNoteAction } from "@/lib/notes/actions";
+import { listNotesAction } from "@/lib/notes/actions";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorAlert } from "@/components/error-alert";
@@ -14,26 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { NewNoteButton } from "./notes/new-note-button";
 import { FileText, Clock } from "lucide-react";
-
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(iso));
-}
-
-const VISIBILITY_LABELS: Record<string, string> = {
-  private: "Private",
-  org: "Org",
-  public_in_org: "Public",
-};
-
-const VISIBILITY_VARIANTS: Record<string, "outline" | "secondary" | "default"> = {
-  private: "outline",
-  org: "secondary",
-  public_in_org: "default",
-};
+import { VISIBILITY_VARIANTS, VISIBILITY_LABELS, formatDateShort } from "@/lib/utils/note-display";
 
 export default async function DashboardPage() {
   let user;
@@ -115,7 +96,7 @@ export default async function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      <span>{formatDate(note.updatedAt)}</span>
+                      <span>{formatDateShort(note.updatedAt)}</span>
                     </div>
                   </CardContent>
                 </Card>

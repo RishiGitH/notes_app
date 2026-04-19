@@ -114,6 +114,7 @@ export interface NoteListItem {
   updatedAt: string;
   authorId: string;
   deletedAt: string | null;
+  tags: string[];
 }
 
 export async function listNotesAction(
@@ -131,7 +132,7 @@ export async function listNotesAction(
 
   let query = supabase
     .from("notes")
-    .select("id, title, visibility, updated_at, author_id, deleted_at")
+    .select("id, title, visibility, updated_at, author_id, deleted_at, note_tags(tags(name))")
     .eq("org_id", orgId)
     .order("updated_at", { ascending: false });
 
@@ -158,6 +159,9 @@ export async function listNotesAction(
     updatedAt: n.updated_at as string,
     authorId: n.author_id as string,
     deletedAt: n.deleted_at as string | null,
+    tags: ((n.note_tags as unknown as { tags: { name: string } | null }[] | null) ?? [])
+      .map((nt) => nt.tags?.name)
+      .filter((name): name is string => typeof name === "string"),
   }));
 }
 
@@ -169,6 +173,7 @@ export interface NoteDetail {
   content: string;
   visibility: "private" | "org" | "public_in_org";
   authorId: string;
+  authorEmail: string;
   currentVersionId: string;
   currentVersionNumber: number;
   updatedAt: string;
@@ -213,6 +218,15 @@ export async function getNoteAction(
 
   const editAccess = await canEditNote(noteId, user.id);
 
+  // Fetch author email from the public users mirror (admin client, no PII in logs).
+  const admin = getAdminSupabase();
+  const { data: authorUser } = await admin
+    .from("users")
+    .select("email")
+    .eq("id", note.author_id as string)
+    .maybeSingle();
+  const authorEmail = (authorUser?.email as string | null) ?? "";
+
   await withContext(ctx, () =>
     logAudit({
       action: "note.view",
@@ -228,6 +242,7 @@ export async function getNoteAction(
     content: version.content as string,
     visibility: note.visibility as "private" | "org" | "public_in_org",
     authorId: note.author_id as string,
+    authorEmail,
     currentVersionId: note.current_version_id as string,
     currentVersionNumber: version.version_number as number,
     updatedAt: note.updated_at as string,
@@ -466,6 +481,7 @@ export interface VersionListItem {
   id: string;
   versionNumber: number;
   authorId: string;
+  authorEmail: string;
   createdAt: string;
 }
 
@@ -509,10 +525,23 @@ export async function listVersionsAction(
     }),
   );
 
+  // Batch-fetch author emails for display; never logged.
+  const authorIds = [...new Set((data ?? []).map((v) => v.author_id as string))];
+  const adminClient = getAdminSupabase();
+  const { data: usersData } = await adminClient
+    .from("users")
+    .select("id, email")
+    .in("id", authorIds);
+  const emailMap: Record<string, string> = {};
+  for (const u of usersData ?? []) {
+    emailMap[u.id as string] = u.email as string;
+  }
+
   return (data ?? []).map((v) => ({
     id: v.id as string,
     versionNumber: v.version_number as number,
     authorId: v.author_id as string,
+    authorEmail: emailMap[v.author_id as string] ?? "",
     createdAt: v.created_at as string,
   }));
 }

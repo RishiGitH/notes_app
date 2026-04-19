@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -38,28 +38,7 @@ import {
   Share2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const VISIBILITY_VARIANTS: Record<string, "outline" | "secondary" | "default"> = {
-  private: "outline",
-  org: "secondary",
-  public_in_org: "default",
-};
-
-const VISIBILITY_LABELS: Record<string, string> = {
-  private: "Private",
-  org: "Org",
-  public_in_org: "Public",
-};
-
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(iso));
-}
+import { VISIBILITY_VARIANTS, VISIBILITY_LABELS, formatDate } from "@/lib/utils/note-display";
 
 const TABS = [
   { id: "read", label: "Read", icon: Eye, href: "" },
@@ -85,15 +64,12 @@ export function NoteDetailShell({
 }: NoteDetailShellProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Determine active tab from URL
-  const searchParams =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search)
-      : null;
-  const activeTab = searchParams?.get("tab") ?? "read";
+  const activeTab = searchParams.get("tab") ?? "read";
 
   // Versions sub-route detection
   const isVersionsRoute = pathname.includes("/versions/");
@@ -127,6 +103,9 @@ export function NoteDetailShell({
             <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
               <Clock className="h-3 w-3" />
               <span>v{note.currentVersionNumber} · {formatDate(note.updatedAt)}</span>
+              {note.authorEmail && (
+                <span className="truncate max-w-[180px]">· {note.authorEmail}</span>
+              )}
             </div>
           </div>
         </div>

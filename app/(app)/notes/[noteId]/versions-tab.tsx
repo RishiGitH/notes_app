@@ -14,16 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { GitCommit, Eye } from "lucide-react";
-
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(iso));
-}
+import { formatDate } from "@/lib/utils/note-display";
 
 interface VersionsTabProps {
   versions: VersionListItem[];
@@ -47,6 +38,7 @@ export function VersionsTab({ versions, noteId }: VersionsTabProps) {
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Version</TableHead>
+              <TableHead>Author</TableHead>
               <TableHead>Saved</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -65,7 +57,10 @@ export function VersionsTab({ versions, noteId }: VersionsTabProps) {
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
+                <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate">
+                  {v.authorEmail || v.authorId}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                   {formatDate(v.createdAt)}
                 </TableCell>
                 <TableCell className="text-right">
