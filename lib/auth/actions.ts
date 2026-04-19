@@ -108,6 +108,8 @@ export async function signUpAction(
     password: parsed.data.password,
   });
 
+  console.log("[signUp] signUp result — user:", data?.user?.id ?? "null", "session:", data?.session ? "present" : "null", "error:", error?.message ?? "none");
+
   const ctx = await buildCtx(data?.user?.id ?? null);
 
   if (error) {
@@ -115,7 +117,6 @@ export async function signUpAction(
       logAudit({
         action: "auth.signup.failed",
         resourceType: "user",
-        // No email in metadata — see loginAction for rationale.
         metadata: { error: error.message },
       }),
     );
@@ -127,10 +128,11 @@ export async function signUpAction(
   // redirect() response. Explicitly signing in forces the SSR client to
   // write the session cookies onto the current response before we redirect,
   // so middleware sees a valid session on the /org/create request.
-  const { error: signInError } = await supabase.auth.signInWithPassword({
+  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
     email: parsed.data.email,
     password: parsed.data.password,
   });
+  console.log("[signUp] post-signup signIn — session:", signInData?.session ? "present" : "null", "error:", signInError?.message ?? "none");
   if (signInError) {
     console.error("[signUp] post-signup signIn failed:", signInError.message);
   }

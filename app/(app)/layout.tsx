@@ -23,6 +23,7 @@ export default async function AppLayout({
   let user;
   try {
     user = await requireUser();
+    console.log("[AppLayout] requireUser ok:", user.id);
   } catch (e) {
     console.error("[AppLayout] requireUser failed:", e instanceof Error ? e.message : e);
     redirect("/login");
@@ -31,15 +32,22 @@ export default async function AppLayout({
   let admin;
   try {
     admin = getAdminSupabase();
+    console.log("[AppLayout] getAdminSupabase ok");
   } catch (e) {
     console.error("[AppLayout] getAdminSupabase failed:", e instanceof Error ? e.message : e);
     redirect("/login");
   }
 
-  const { data: memberships } = await admin
+  console.log("[AppLayout] querying memberships for user:", user.id);
+  const { data: memberships, error: membershipsError } = await admin
     .from("memberships")
     .select("org_id, role, organizations(id, name, slug)")
     .eq("user_id", user.id);
+
+  if (membershipsError) {
+    console.error("[AppLayout] memberships query failed:", membershipsError.message, membershipsError.code);
+  }
+  console.log("[AppLayout] memberships count:", memberships?.length ?? 0);
 
   const orgs = (memberships ?? [])
     .map((m) => {
