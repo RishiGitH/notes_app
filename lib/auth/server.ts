@@ -68,6 +68,7 @@ export async function requireUser() {
 export function getAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const secret = process.env.SUPABASE_SECRET_KEY;
+  console.log("[getAdminSupabase] url set:", !!url, "secret set:", !!secret, "secret prefix:", secret?.slice(0, 12) ?? "MISSING");
   if (!url || !secret) {
     throw new Error(
       "SUPABASE_SECRET_KEY or NEXT_PUBLIC_SUPABASE_URL is not set",
