@@ -24,8 +24,7 @@ import { fileTypeFromBuffer } from "file-type";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/lib/db/client";
 import { files, notes } from "@/lib/db/schema";
-import { requireUser } from "@/lib/auth/server";
-import { getAdminSupabase } from "@/lib/auth/server";
+import { requireUser, getAdminSupabase, getServerSupabase } from "@/lib/auth/server";
 import { requireOrgAccess, canEditNote } from "@/lib/security/permissions";
 import { logAudit } from "@/lib/logging/audit";
 import { withContext } from "@/lib/logging/request-context";
@@ -142,11 +141,20 @@ export async function uploadNoteFile(
 
 // getFileInfo: fetch a files row for the given fileId, visible to the caller.
 // Used by the download proxy route to get the storage path.
+//
+// F-0011 fix: use the user-scoped client for the initial file lookup so that
+// RLS returns null for files in orgs the caller has no access to. This prevents
+// the 403-vs-404 enumeration oracle that existed when the admin client was used
+// before requireOrgAccess. The user-scoped client enforces RLS, so a caller who
+// is not a member of the file's org will receive null (→ 404) rather than a row
+// (→ 403), making both branches indistinguishable.
 export async function getFileInfo(fileId: string) {
   const user = await requireUser();
 
-  const admin = getAdminSupabase();
-  const { data: file } = await admin
+  const supabase = await getServerSupabase();
+  if (!supabase) return null;
+
+  const { data: file } = await supabase
     .from("files")
     .select("id, org_id, note_id, path, mime, size_bytes")
     .eq("id", fileId)
