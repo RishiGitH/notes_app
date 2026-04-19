@@ -53,8 +53,9 @@ EXPOSE 3000
 
 # Health check uses Node 20's built-in fetch — no curl install required.
 # start-period gives the Next.js cold-start time before failures are counted.
+# Use the runtime PORT so Railway can inject its own port if needed.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "const port = process.env.PORT || 3000; fetch('http://127.0.0.1:' + port + '/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # server.js is the standalone entrypoint emitted by Next.js.
 CMD ["node", "server.js"]

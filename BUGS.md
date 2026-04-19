@@ -216,3 +216,12 @@ The `/api/files/[fileId]/download` route returned a `403 Forbidden` when the fil
 The root cause was that `getFileInfo` used the admin (service-role) database client to fetch the file row by the caller-supplied ID before checking if the caller was allowed to see it. Fixed by switching the initial lookup to the user-scoped client, which enforces RLS and returns nothing for inaccessible files. Both "wrong org" and "doesn't exist" now look identical to the caller.
 
 ---
+
+
+## digital ocean inferenc eicnorrect and dokcer file incorrect condifuration hardcoded port
+
+**high** — fix `81742d6`
+
+Changed digital ocean endpoint in server code to use env var and also fixed the docker file to use env var for port instead of hardcoding it to 3000. 
+
+Added proper health check 
