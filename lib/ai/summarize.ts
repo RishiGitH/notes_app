@@ -31,15 +31,7 @@ import {
   acceptSummaryInput,
   type AcceptSummaryInput,
 } from "@/lib/ai/schemas";
-
-// AiOutputInvalidError is a known error class for invalid model output.
-// Thrown (not swallowed) so the caller can surface an appropriate UI message.
-export class AiOutputInvalidError extends Error {
-  constructor(reason: string) {
-    super(`AI output did not match expected schema: ${reason}`);
-    this.name = "AiOutputInvalidError";
-  }
-}
+import { AiOutputInvalidError } from "@/lib/ai/errors";
 
 // Helper: read request-id and org-id from headers minted by middleware.
 async function buildContext(userId: string, orgId?: string) {
