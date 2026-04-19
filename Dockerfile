@@ -38,11 +38,13 @@ ENV PORT=3000
 # Copy the self-contained standalone server (includes trimmed node_modules).
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 
-# Next.js standalone does NOT copy static assets or public/ — add them manually.
+# Next.js standalone does NOT copy static assets — add them manually.
 # Static assets (JS, CSS, images produced by the build):
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
-# Public directory (favicons, robots.txt, etc.):
-COPY --from=builder --chown=node:node /app/public ./public
+
+# public/ directory is optional (favicons, robots.txt, etc.).
+# Skipped here because this project has no public/ assets yet;
+# add back if public/ is created: COPY --from=builder --chown=node:node /app/public ./public
 
 # Run as the non-root "node" user that ships with the alpine image (uid 1000).
 USER node
