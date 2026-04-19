@@ -154,3 +154,108 @@ redirect("/org/create")` guard, so new users still get sent there when
 they try to access notes or the dashboard.
 
 ---
+
+
+## An admin of one org could list, inject, or revoke shares on notes they don't own
+
+**high** — fix `f0255b5`
+
+The `canManageShares` helper that gates all share actions (grant, revoke, list)
+fetched a note by its ID with no org filter. It then checked whether the
+caller was an admin of the `orgId` they passed in. These two checks were
+completely disconnected: an admin of org B could pass a noteId from org A
+and their own orgId, the note lookup would succeed (finding the org-A note),
+the membership check would pass (they are an admin — of org B), and the gate
+would return `true`.
+
+In practice this meant any org admin who could guess or discover a note UUID
+from another org could call `listSharesAction` to get the share recipient list
+for that note, `grantShareAction` to inject a share row into another org's
+note, or `revokeShareAction` to silently remove shares from a note they
+have no business touching.
+
+Added `.eq("org_id", orgId)` to the notes select inside `canManageShares`
+so the note lookup only succeeds if the note belongs to the same org the
+caller is operating in. A cross-org noteId now returns `false` immediately.
+
+
+---
+
+
+## Files attached to private notes were downloadable by any org member via the Storage API
+
+**high** — fix `f0255b5`
+
+The Supabase Storage RLS SELECT policy for the `notes-files` bucket only
+checked that the caller was an org member and that the note wasn't deleted.
+It did not check note visibility. So an org member could take any file path
+(`<org_id>/<note_id>/<filename>`) and download it directly through the
+Storage API — even if the note was `private` and they had never been its
+author or a share recipient.
+
+The application-layer download route (`/api/files/[fileId]/download`) was
+correctly enforcing visibility through the `files` table RLS, but that check
+could be bypassed entirely by calling the Supabase Storage endpoint directly.
+
+Replaced the SELECT policy (migration 0010) with one that mirrors the notes
+visibility model: the author always has access; org-wide notes are readable
+by any org member; private notes require an explicit `note_shares` row.
+
+
+---
+
+
+## AI summarizer would send arbitrarily large notes to Anthropic with no size check
+
+**med** — fix `f0255b5`
+
+`generateSummary` concatenated the full note content into the API request
+with no length cap. A user could save a very large note and repeatedly call
+generate, sending hundreds of thousands of tokens to Anthropic per call.
+The same unbounded string was also the prompt-injection surface — a large
+enough note could push the system prompt framing out of the effective context
+window.
+
+Added a 20,000-character hard cap before the API call so oversized notes are
+rejected with a clear error before any network request is made. Also wrapped
+the note content in `<note_content>` delimiter tags so injected instructions
+in the note body cannot syntactically escape the content role.
+
+
+---
+
+
+## org_id cookie was set without the secure flag, allowing transmission over HTTP
+
+**low** — fix `f0255b5`
+
+Every place the `org_id` cookie was written — `createOrgAction`,
+`switchOrgAction`, and the app layout's mismatch correction — used
+`httpOnly: true, sameSite: "lax"` but omitted `secure: true`. In production,
+a network attacker on a non-HTTPS path (misconfigured redirect, HTTP fallback)
+could read or inject the cookie even though `requireOrgAccess` re-validates
+membership on every request.
+
+Added `secure: process.env.NODE_ENV === "production"` to all three cookie
+writes so the flag is set in production but not in local dev where HTTPS
+is unavailable.
+
+
+---
+
+
+## saveNoteAction UPDATE was not scoped by org_id unlike its sibling actions
+
+**low** — fix `f0255b5`
+
+`softDeleteNoteAction` and `changeVisibilityAction` both include
+`.eq("org_id", orgId)` on their UPDATE queries as defense-in-depth.
+`saveNoteAction`'s final UPDATE (setting `current_version_id`) only filtered
+by `id`. The prior `requireOrgAccess` check makes this unexploitable, but
+the inconsistency means a future regression that forgets the auth check would
+have no safety net at the DB layer.
+
+Added `.eq("org_id", orgId)` to match the pattern used everywhere else.
+
+
+---
