@@ -13,8 +13,6 @@
 //   resource IDs, and non-PII metadata).
 //
 // Node runtime required (AsyncLocalStorage via withContext).
-export const runtime = "nodejs";
-
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";

@@ -7,8 +7,6 @@
 // audit_logs via logAudit.
 //
 // Node runtime required (AsyncLocalStorage via withContext / logAudit).
-export const runtime = "nodejs";
-
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers, cookies } from "next/headers";

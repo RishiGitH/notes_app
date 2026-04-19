@@ -5,8 +5,6 @@
 // Tags are org-scoped (unique name per org). note_tags links notes to tags.
 // All mutations require requireOrgAccess + canEditNote on the note.
 // Node runtime required.
-export const runtime = "nodejs";
-
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";

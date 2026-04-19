@@ -1,0 +1,47 @@
+# Files excluded from the Docker build context.
+# Keep this list conservative — excluding too much prevents the builder
+# from seeing source files it needs to compile.
+
+# Version control
+.git
+.gitignore
+
+# Build outputs (rebuilt inside the builder stage)
+.next
+out
+dist
+
+# Dependencies (reinstalled by the deps stage)
+node_modules
+
+# Test artifacts and coverage
+coverage
+.nyc_output
+
+# Local environment files (secrets must never enter the image)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Supabase local dev state (not needed at build time)
+supabase/.branches
+supabase/.temp
+supabase/seed.sql
+
+# Agent tooling and reports (not needed in the image)
+.claude
+.reports
+
+# Documentation (safe to exclude; reduces context size)
+*.md
+!README.md
+
+# Docker files themselves
+Dockerfile
+.dockerignore
