@@ -49,10 +49,12 @@ export async function getSession(): Promise<Session | null> {
 export async function requireUser() {
   const supabase = await getServerSupabase();
   if (!supabase) {
+    console.error("[requireUser] no supabase client — missing env vars");
     throw new Error("Not authenticated");
   }
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) {
+    console.error("[requireUser] getUser failed:", error?.message ?? "no user", "status:", error?.status);
     throw new Error("Not authenticated");
   }
   return data.user;

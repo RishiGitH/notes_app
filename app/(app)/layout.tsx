@@ -23,7 +23,8 @@ export default async function AppLayout({
   let user;
   try {
     user = await requireUser();
-  } catch {
+  } catch (e) {
+    console.error("[AppLayout] requireUser failed:", e instanceof Error ? e.message : e);
     redirect("/login");
   }
 
