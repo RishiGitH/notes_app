@@ -8,8 +8,7 @@ FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat && corepack enable
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
-RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 # ---------- builder stage ----------------------------------------------------
 # Compile Next.js with output: 'standalone' (set in next.config.ts).
