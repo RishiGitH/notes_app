@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { AddMemberForm } from "./add-member-form";
 import { RemoveMemberButton } from "./remove-member-button";
+import { formatDateShort } from "@/lib/utils/note-display";
 
 const ROLE_VARIANTS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
   owner: "default",
@@ -25,14 +26,6 @@ const ROLE_VARIANTS: Record<string, "default" | "secondary" | "outline" | "destr
   member: "outline",
   viewer: "outline",
 };
-
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(iso));
-}
 
 export default async function MembersPage() {
   let user;
@@ -129,7 +122,7 @@ export default async function MembersPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatDate(m.createdAt)}
+                    {formatDateShort(m.createdAt)}
                   </TableCell>
                   {isAdmin && (
                     <TableCell>

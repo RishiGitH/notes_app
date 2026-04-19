@@ -8,16 +8,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { DiffViewer } from "./diff-viewer";
-
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(iso));
-}
+import { formatDate } from "@/lib/utils/note-display";
 
 export default async function VersionDiffPage({
   params,
