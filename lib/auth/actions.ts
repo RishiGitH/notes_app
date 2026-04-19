@@ -10,8 +10,6 @@
 //   to the client — the client reads the returned error and shows it).
 //
 // Node runtime required (AsyncLocalStorage via withContext).
-export const runtime = "nodejs";
-
 import { redirect } from "next/navigation";
 import { headers, cookies } from "next/headers";
 import { z } from "zod";

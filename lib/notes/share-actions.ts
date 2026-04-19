@@ -8,8 +8,6 @@
 // (user_id = auth.uid()). Listing all shares on a note requires author
 // or admin access — this action uses the admin client.
 // Node runtime required.
-export const runtime = "nodejs";
-
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
