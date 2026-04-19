@@ -1,7 +1,12 @@
 // Authenticated app layout shell. Requires a signed-in user and an active org.
 // Reads the current org from the x-org-id header (set by middleware from the
 // org_id cookie) and fetches the user's org memberships to populate the
-// org switcher. Redirects to /org/create if the user has no orgs.
+// org switcher.
+//
+// If the user has no org memberships, renders children directly (no shell).
+// The /org/create page (which lives inside this route group) handles its own
+// full-screen layout. Individual app pages guard against missing orgId and
+// redirect to /org/create themselves.
 
 import { redirect } from "next/navigation";
 import { headers, cookies } from "next/headers";
@@ -45,7 +50,11 @@ export default async function AppLayout({
     .filter(Boolean) as { id: string; name: string; slug: string; role: string }[];
 
   if (orgs.length === 0) {
-    redirect("/org/create");
+    // No org memberships yet — render children directly (no sidebar shell).
+    // The /org/create page handles its own full-screen layout.
+    // We do NOT redirect here: /org/create is inside this route group, so
+    // redirecting to it would loop. Individual app pages redirect themselves.
+    return <>{children}</>;
   }
 
   const h = await headers();
