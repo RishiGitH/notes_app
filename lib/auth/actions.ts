@@ -169,7 +169,13 @@ export async function signUpAction(
   );
 
   // Redirect to org creation — new users have no org yet.
-  redirect("/org/create");
+  // Return a redirect signal instead of calling redirect() directly:
+  // redirect() in a Server Action throws before cookies are flushed to
+  // the HTTP response, so the session cookies from signInWithPassword
+  // are lost and the next request arrives unauthenticated.
+  // The client page reads "__redirect__:" and does window.location.replace
+  // which forces a full browser navigation with fresh cookies.
+  return "__redirect__:/org/create";
 }
 
 // ── signOutAction ─────────────────────────────────────────────────────────────

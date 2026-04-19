@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,26 @@ function SubmitButton() {
 }
 
 export default function SignUpPage() {
-  const [error, formAction] = useActionState(signUpAction, null);
+  const [state, formAction] = useActionState(signUpAction, null);
+
+  // Server Action returns "__redirect__:/path" to signal success.
+  // We use window.location.replace (hard navigation) so the browser
+  // picks up the fresh session cookies written by signInWithPassword
+  // before the redirect. next/navigation router.push() would be a
+  // soft navigation that reuses the stale cookie state.
+  const redirectPath =
+    typeof state === "string" && state.startsWith("__redirect__:")
+      ? state.slice("__redirect__:".length)
+      : null;
+
+  useEffect(() => {
+    if (redirectPath) {
+      window.location.replace(redirectPath);
+    }
+  }, [redirectPath]);
+
+  const error =
+    state && !state.startsWith("__redirect__:") ? state : null;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
@@ -70,6 +89,9 @@ export default function SignUpPage() {
                   placeholder="Min. 8 characters"
                 />
               </div>
+              {redirectPath && (
+                <p className="text-sm text-muted-foreground">Redirecting…</p>
+              )}
               {error && (
                 <p className="text-sm text-destructive" role="alert">
                   {error}
