@@ -9,7 +9,7 @@
 // redirect to /org/create themselves.
 
 import { redirect } from "next/navigation";
-import { headers, cookies } from "next/headers";
+import { headers } from "next/headers";
 import { requireUser, getAdminSupabase } from "@/lib/auth/server";
 import { Sidebar } from "@/components/shell/sidebar";
 import { MobileSidebar } from "@/components/shell/mobile-sidebar";
@@ -59,18 +59,12 @@ export default async function AppLayout({
 
   const h = await headers();
   const currentOrgId = h.get("x-org-id");
+  // If the cookie is stale (points to an org the user no longer belongs to,
+  // or is absent), fall back to the first valid org for this render. The cookie
+  // will be corrected on the next switchOrgAction call. Server Components cannot
+  // write cookies — that is only possible in Server Actions or Route Handlers.
   const validCurrentOrg =
     orgs.find((o) => o.id === currentOrgId) ?? orgs[0]!;
-
-  if (!currentOrgId || currentOrgId !== validCurrentOrg.id) {
-    const cookieStore = await cookies();
-    cookieStore.set("org_id", validCurrentOrg.id, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      secure: process.env.NODE_ENV === "production",
-    });
-  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
