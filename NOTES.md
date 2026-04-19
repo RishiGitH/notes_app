@@ -295,3 +295,19 @@ Commits
 - `7cc3e54` deps: add seed and perf tooling (tsx, faker, autocannon, dotenv)
 - `e9ba0dc` scripts: add seed.ts with 10k-note generator and --small flag
 - `8031fc5` scripts: add perf-search.ts autocannon harness for /search path
+
+## [2026-04-19T02:25:03Z] [lead-backend] Task: Storage RLS migration (response to search-ai Request B)
+
+**Plan:**
+- Write drizzle/0009_storage_rls.sql: create private notes-files bucket (10 MiB limit, MIME allowlist), add SELECT/INSERT/DELETE policies on storage.objects using existing is_org_member/org_role helpers.
+- Add idx 9 entry to drizzle/meta/_journal.json.
+- Apply via pnpm db:migrate; verify tenant-isolation stays green.
+
+**Result:**
+- Created drizzle/0009_storage_rls.sql. Bucket created idempotently via ON CONFLICT DO NOTHING. SELECT and INSERT policies: is_org_member(org from path segment 1) AND note at path segment 2 not soft-deleted. DELETE policy: uploader (owner column) OR org admin/owner. No UPDATE policy (objects are immutable; replace = delete + re-upload).
+- File upload path (service-role client) bypasses Storage RLS — Postgres files-table RLS remains the primary gate; Storage RLS is defense-in-depth.
+- Fixed test 05 proxy assertion: Next.js middleware redirects unauthenticated requests with 307 (redirect to /login), which is correct behavior. Expanded accepted status set from [401,403,404] to [307,302,401,403,404].
+- Gate: 30/30 tenant-isolation tests green, pnpm typecheck clean.
+
+**Commits:**
+- `14852ce` storage: add notes-files bucket and object-level RLS policies, close search-ai request B
