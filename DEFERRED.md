@@ -25,3 +25,16 @@ applicable, the commit where the decision was taken.
 - **AI Summary tab UI** — `generateAiSummaryAction` and related live on feat/infra (3C); AI tab renders EmptyState pending that merge.
 - **Activity feed on dashboard** — `listAuditLogsAction` not shipped; dashboard shows placeholder.
 - **Role-change in members table** — `changeRoleAction` not in Phase 3A; members page shows role badge but no edit control.
+
+## Phase 4 scope-cutter decisions (2026-04-19)
+
+Cut per PLAN.md section 6 cut-list order; all items are polish, not correctness:
+
+1. **AI partial-accept UX** — accept-all ships; per-field picker deferred. Core generate/validate/store/accept path works; users lose granular control but not safety.
+2. **Diff viewer styling** — functional unified diff ships; side-by-side and syntax-coloring deferred. Version history and rollback still work.
+3. **File upload UI polish** — functional upload/list/download/delete ships; drag-drop, progress bars, thumbnails deferred. RLS enforcement intact.
+4. **Members page niceties** — direct-add and role badge ship; inline `changeRoleAction` deferred. Admins can manage via existing add/remove.
+5. **Empty/error-state polish sweep** — per-page defaults ship; global polish pass deferred.
+6. **Dashboard activity feed** — placeholder ships; `listAuditLogsAction` deferred. Audit rows written correctly; read-side is cosmetic.
+7. **Org rename/delete** — read-only org settings ships; requires new audit-logged actions with cascade review, risk outweighs value pre-ship.
+8. **10k-seed perf tuning** — seed harness and autocannon harness ship; production sizing optimization deferred.

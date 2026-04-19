@@ -53,7 +53,10 @@ Authored at the end of the build from `drafts/REVIEW.draft.md`.
 
 ## Known risks (acknowledged, not fixed)
 
-- <populated from remaining open findings at Phase 4>
+- **O-med-01 (observability, med):** `rejectSummary`, `acceptSummary`, and `generateSummary` run an admin DB lookup before any `withContext` call. If the lookup itself fails, the resulting `console.error` carries `requestId: "unknown"`. Happy-path audit rows are fully correlated. No cross-tenant data is accessible via this gap.
+- **O-low-01 (observability, low):** `console.error` in `download/route.ts` was missing the `requestId` field. Fixed in commit 555f057 (added to structured log); `logError` now also fires an `error.5xx` audit row.
+- **F-0003 (high, design decision):** `addMemberAction` adds a target user to an org without their consent. PLAN.md §9 explicitly authorizes "direct add by email by an admin"; a pending-invite flow is out of scope. Risk: an admin can use this to enumerate registered users and read their display names via the `users_select_self_or_same_org` RLS policy. Accepted trade-off documented in DEFERRED.md.
+- **Supabase signOut scope:** `signOutAction` calls `supabase.auth.signOut()` without specifying scope. Default is global, which invalidates all sessions. Verified against @supabase/ssr@0.5.2 — global is correct for this app's UX (sign out of all devices). No code change needed.
 
 ## What I would review next with more time
 
