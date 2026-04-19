@@ -1,12 +1,38 @@
-// Members page — server component. Lists current org members and provides a
-// form to add a new member by email. Requires admin access to add/remove.
-
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { requireUser, getAdminSupabase } from "@/lib/auth/server";
 import { requireOrgAccess } from "@/lib/security/permissions";
 import { withContext } from "@/lib/logging/request-context";
+import { PermissionDenied } from "@/components/permission-denied";
+import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorAlert } from "@/components/error-alert";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { AddMemberForm } from "./add-member-form";
+import { RemoveMemberButton } from "./remove-member-button";
+
+const ROLE_VARIANTS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
+  owner: "default",
+  admin: "secondary",
+  member: "outline",
+  viewer: "outline",
+};
+
+function formatDate(iso: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(iso));
+}
 
 export default async function MembersPage() {
   let user;
@@ -19,59 +45,112 @@ export default async function MembersPage() {
   const h = await headers();
   const orgId = h.get("x-org-id");
   if (!orgId) redirect("/org/create");
-
-  // Authoritative server-side gate: verify the caller is a member of orgId
-  // before any tenant-scoped DB read. Throws on non-member (caught by the
-  // error boundary) and writes a permission.denied audit row. This closes
-  // the x-org-id header-smuggling / stale-cookie class of bugs: even if an
-  // attacker makes the header say a foreign org, this check rejects them
-  // before the admin query runs.
   const requestId = h.get("x-request-id") ?? "unknown";
-  const membership = await withContext(
-    { requestId, orgId, userId: user.id },
-    () => requireOrgAccess(orgId, "viewer"),
-  );
 
-  const admin = getAdminSupabase();
-
-  // Fetch members with their user info.
-  const { data: memberships } = await admin
-    .from("memberships")
-    .select("id, role, user_id, users(email, display_name)")
-    .eq("org_id", orgId)
-    .order("created_at");
+  let membership;
+  try {
+    membership = await withContext(
+      { requestId, orgId, userId: user.id },
+      () => requireOrgAccess(orgId, "viewer"),
+    );
+  } catch {
+    return <PermissionDenied />;
+  }
 
   const isAdmin = membership.role === "admin" || membership.role === "owner";
 
-  return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-xl font-semibold">Members</h1>
+  const admin = getAdminSupabase();
+  const { data: memberships, error } = await admin
+    .from("memberships")
+    .select("id, role, user_id, created_at, users(email, display_name)")
+    .eq("org_id", orgId)
+    .order("created_at");
 
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border text-left text-muted-foreground">
-            <th className="pb-2 pr-4">Email</th>
-            <th className="pb-2 pr-4">Role</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(memberships ?? []).map((m) => {
-            const u = Array.isArray(m.users) ? m.users[0] : m.users;
-            return (
-              <tr key={m.id} className="border-b border-border">
-                <td className="py-2 pr-4">
-                  {u?.email ?? m.user_id}
-                </td>
-                <td className="py-2 pr-4 capitalize">{m.role}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <PageHeader title="Members" />
+        <ErrorAlert message={error.message} />
+      </div>
+    );
+  }
+
+  const rows = (memberships ?? []).map((m) => {
+    const u = Array.isArray(m.users) ? m.users[0] : m.users;
+    return {
+      id: m.id as string,
+      userId: m.user_id as string,
+      email: (u?.email as string) ?? m.user_id as string,
+      displayName: (u?.display_name as string) ?? "",
+      role: m.role as string,
+      createdAt: m.created_at as string,
+    };
+  });
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      <PageHeader
+        title="Members"
+        description={`${rows.length} member${rows.length === 1 ? "" : "s"} in this workspace`}
+      />
+
+      {rows.length === 0 ? (
+        <EmptyState title="No members found" />
+      ) : (
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Member</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Joined</TableHead>
+                {isAdmin && <TableHead className="w-10" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((m) => (
+                <TableRow key={m.id}>
+                  <TableCell>
+                    <div>
+                      <p className="text-sm font-medium">{m.email}</p>
+                      {m.displayName && (
+                        <p className="text-xs text-muted-foreground">
+                          {m.displayName}
+                        </p>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={ROLE_VARIANTS[m.role] ?? "outline"}
+                      className="text-xs capitalize"
+                    >
+                      {m.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatDate(m.createdAt)}
+                  </TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      {m.role !== "owner" && m.userId !== user.id && (
+                        <RemoveMemberButton
+                          membershipId={m.id}
+                          email={m.email}
+                        />
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {isAdmin && (
-        <div className="space-y-2">
-          <h2 className="text-base font-medium">Add member</h2>
+        <div className="space-y-3 pt-2">
+          <h2 className="text-sm font-medium">Add member</h2>
           <AddMemberForm />
         </div>
       )}
