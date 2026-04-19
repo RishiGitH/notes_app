@@ -1,3 +1,5 @@
+"use server";
+
 // File upload and download Server Actions (Phase 3C, search-ai).
 //
 // Security invariants enforced here (AGENTS.md section 2):
@@ -11,8 +13,6 @@
 // Audit events (AGENTS.md section 8):
 //   file.upload   — a file was uploaded
 //   file.download — a signed URL was issued (via proxy route)
-
-"use server";
 
 export const runtime = "nodejs";
 

@@ -1,3 +1,5 @@
+"use server";
+
 // AI summarizer Server Actions (Phase 3C, search-ai).
 //
 // Security invariants enforced here (AGENTS.md section 2):
@@ -11,8 +13,6 @@
 //   ai.summarize.request  — a summary was generated (or rejected due to schema fail)
 //   ai.summarize.accept   — fields were accepted (partial or full)
 //   ai.summarize.reject   — user explicitly rejected the draft
-
-"use server";
 
 export const runtime = "nodejs";
 
