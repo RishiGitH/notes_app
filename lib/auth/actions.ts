@@ -122,6 +122,19 @@ export async function signUpAction(
     return error.message;
   }
 
+  // When email confirmation is disabled, signUp returns a session but the
+  // SSR client's setAll() cookie writes are lost when Next.js issues the
+  // redirect() response. Explicitly signing in forces the SSR client to
+  // write the session cookies onto the current response before we redirect,
+  // so middleware sees a valid session on the /org/create request.
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email: parsed.data.email,
+    password: parsed.data.password,
+  });
+  if (signInError) {
+    console.error("[signUp] post-signup signIn failed:", signInError.message);
+  }
+
   const user = data.user!;
 
   let admin;
