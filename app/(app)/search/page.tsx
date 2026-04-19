@@ -1,3 +1,9 @@
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth/server";
+import { requireOrgAccess } from "@/lib/security/permissions";
+import { withContext } from "@/lib/logging/request-context";
+import { PermissionDenied } from "@/components/permission-denied";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Input } from "@/components/ui/input";
@@ -13,6 +19,26 @@ export default async function SearchPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch {
+    redirect("/login");
+  }
+
+  const h = await headers();
+  const orgId = h.get("x-org-id");
+  if (!orgId) redirect("/org/create");
+  const requestId = h.get("x-request-id") ?? "unknown";
+
+  try {
+    await withContext({ requestId, orgId, userId: user.id }, () =>
+      requireOrgAccess(orgId, "viewer"),
+    );
+  } catch {
+    return <PermissionDenied />;
+  }
+
   const { q = "" } = await searchParams;
 
   return (
