@@ -311,3 +311,18 @@ Commits
 
 **Commits:**
 - `14852ce` storage: add notes-files bucket and object-level RLS policies, close search-ai request B
+
+## [2026-04-19T05:50:49Z] [lead-backend] Task: Phase 4 - Hardening review
+
+**Plan:**
+- Run `/review-diff main` covering everything since the first commit of Phase 1 (from 89475bf..HEAD). security-reviewer writes structured findings under `.reports/security/`.
+- Batch-walk findings via `/triage` through bug-verifier. For each CONFIRMED verdict: fix on main and add a regression test.
+- Invoke observability-reviewer subagent on the full repo. Address any high-severity logging coverage or PII-leak gap.
+- Invoke scope-cutter subagent to produce a cut report partitioning remaining work into ship / degrade / defer.
+- Run one final senior-reviewer `diff-review.md` pass. Migrate the last findings into BUGS.md.
+- Confirm `pnpm test:tenant-isolation` is green and no confirmed bug is outstanding.
+- Commit cadence per AGENTS.md section 4: logical units only, phase-4 budget 5-10.
+
+**Exit gate (PLAN.md Phase 4):** no confirmed bug outstanding; observability clean.
+**Gate commands:** `pnpm test:tenant-isolation && pnpm typecheck && pnpm lint`
+
