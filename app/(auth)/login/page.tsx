@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,19 +14,61 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { NotebookPen } from "lucide-react";
-import { loginAction } from "@/lib/auth/actions";
+import {
+  finalizeLoginAction,
+  recordAuthFailureAction,
+} from "@/lib/auth/actions";
+import { getBrowserSupabase } from "@/lib/auth/client";
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? "Signing in…" : "Sign in"}
-    </Button>
-  );
+function sanitizeNextPath(nextPath: string | null, fallback: string) {
+  if (!nextPath) return fallback;
+  if (!nextPath.startsWith("/") || nextPath.startsWith("//")) return fallback;
+  return nextPath;
 }
 
 export default function LoginPage() {
-  const [error, formAction] = useActionState(loginAction, null);
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(formData: FormData) {
+    setPending(true);
+    setError(null);
+
+    const supabase = getBrowserSupabase();
+    const email = String(formData.get("email") ?? "");
+    const password = String(formData.get("password") ?? "");
+
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (authError) {
+      await recordAuthFailureAction("auth.login.failed", authError.message);
+      setError(authError.message);
+      setPending(false);
+      return;
+    }
+
+    const syncError = await finalizeLoginAction();
+    if (syncError) {
+      console.error("[login] finalizeLoginAction:", syncError);
+    }
+
+    const nextPath = sanitizeNextPath(searchParams.get("next"), "/notes");
+    router.replace(nextPath);
+    router.refresh();
+  }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
@@ -45,7 +87,7 @@ export default function LoginPage() {
             <CardDescription>Sign in to your workspace</CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={formAction} className="space-y-4">
+            <form action={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -73,7 +115,9 @@ export default function LoginPage() {
                   {error}
                 </p>
               )}
-              <SubmitButton />
+              <Button type="submit" className="w-full" disabled={pending}>
+                {pending ? "Signing in…" : "Sign in"}
+              </Button>
             </form>
           </CardContent>
         </Card>

@@ -1,33 +1,20 @@
 "use server";
 
-// Auth Server Actions: login, sign-up, sign-out.
+// Auth Server Actions: post-auth bookkeeping + sign-out.
 //
 // All actions:
 // - Are wrapped with withContext() so logAudit can read requestId/orgId/userId.
 // - Log every auth event to audit_logs.
-// - Use the publishable-key Supabase client for Auth calls (not service role).
-// - Redirect on success; return a plain error string on failure (never throw
-//   to the client — the client reads the returned error and shows it).
+// - Validate the authenticated user from the server-side session.
+// - Mirror auth users into public.users for app-level lookups.
+// - Log auth events to audit_logs.
 //
 // Node runtime required (AsyncLocalStorage via withContext).
 import { redirect } from "next/navigation";
 import { headers, cookies } from "next/headers";
-import { z } from "zod";
-import { getServerSupabase, getAdminSupabase } from "@/lib/auth/server";
+import { requireUser, getServerSupabase, getAdminSupabase } from "@/lib/auth/server";
 import { withContext } from "@/lib/logging/request-context";
 import { logAudit } from "@/lib/logging/audit";
-
-// ── Schema ────────────────────────────────────────────────────────────────────
-
-const loginSchema = z.object({
-  email: z.string().email("Invalid email"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-});
-
-const signUpSchema = z.object({
-  email: z.string().email("Invalid email"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -40,142 +27,92 @@ async function buildCtx(userId: string | null = null) {
   };
 }
 
-// ── loginAction ───────────────────────────────────────────────────────────────
-
-export async function loginAction(
-  _prevState: string | null,
-  formData: FormData,
-): Promise<string | null> {
-  const raw = {
-    email: formData.get("email") as string,
-    password: formData.get("password") as string,
-  };
-
-  const parsed = loginSchema.safeParse(raw);
-  if (!parsed.success) {
-    return parsed.error.issues[0]?.message ?? "Validation error";
-  }
-
-  const supabase = await getServerSupabase();
-  if (!supabase) return "Service unavailable";
-
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: parsed.data.email,
-    password: parsed.data.password,
-  });
-
-  const ctx = await buildCtx(data?.user?.id ?? null);
-
-  await withContext(ctx, () =>
-    logAudit({
-      action: error ? "auth.login.failed" : "auth.login",
-      resourceType: "user",
-      resourceId: data?.user?.id,
-      // Never write the submitted email into audit metadata: audit_logs is
-      // retained indefinitely and readable by ops/analytics paths, and a
-      // failed-login row with an email is an enumeration oracle. Keep the
-      // error message only. (AGENTS.md section 2 item 11, section 8.)
-      metadata: { error: error?.message },
-    }),
-  );
-
-  if (error) return error.message;
-
-  redirect("/notes");
-}
-
-// ── signUpAction ──────────────────────────────────────────────────────────────
-
-export async function signUpAction(
-  _prevState: string | null,
-  formData: FormData,
-): Promise<string | null> {
-  const raw = {
-    email: formData.get("email") as string,
-    password: formData.get("password") as string,
-  };
-
-  const parsed = signUpSchema.safeParse(raw);
-  if (!parsed.success) {
-    return parsed.error.issues[0]?.message ?? "Validation error";
-  }
-
-  const supabase = await getServerSupabase();
-  if (!supabase) return "Service unavailable";
-
-  const { data, error } = await supabase.auth.signUp({
-    email: parsed.data.email,
-    password: parsed.data.password,
-  });
-
-  console.log("[signUp] signUp result — user:", data?.user?.id ?? "null", "session:", data?.session ? "present" : "null", "error:", error?.message ?? "none");
-
-  const ctx = await buildCtx(data?.user?.id ?? null);
-
-  if (error) {
-    await withContext(ctx, () =>
-      logAudit({
-        action: "auth.signup.failed",
-        resourceType: "user",
-        metadata: { error: error.message },
-      }),
-    );
-    return error.message;
-  }
-
-  // When email confirmation is disabled, signUp returns a session but the
-  // SSR client's setAll() cookie writes are lost when Next.js issues the
-  // redirect() response. Explicitly signing in forces the SSR client to
-  // write the session cookies onto the current response before we redirect,
-  // so middleware sees a valid session on the /org/create request.
-  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-    email: parsed.data.email,
-    password: parsed.data.password,
-  });
-  console.log("[signUp] post-signup signIn — session:", signInData?.session ? "present" : "null", "error:", signInError?.message ?? "none");
-  if (signInError) {
-    console.error("[signUp] post-signup signIn failed:", signInError.message);
-  }
-
-  const user = data.user!;
-
+async function syncCurrentUserRow(user: { id: string; email?: string | null }) {
   let admin;
   try {
     admin = getAdminSupabase();
   } catch (e) {
-    console.error("[signUp] getAdminSupabase failed:", e instanceof Error ? e.message : e);
+    console.error("[auth.sync] getAdminSupabase failed:", e instanceof Error ? e.message : e);
     return "Server configuration error. Please try again later.";
   }
 
-  // Mirror user into public.users (auth trigger is deferred to a future
-  // migration; we insert manually for now).
   const { error: upsertError } = await admin.from("users").upsert(
-    { id: user.id, email: user.email!, updated_at: new Date().toISOString() },
+    {
+      id: user.id,
+      email: user.email ?? "",
+      updated_at: new Date().toISOString(),
+    },
     { onConflict: "id" },
   );
   if (upsertError) {
-    console.error("[signUp] users upsert failed:", upsertError.message, upsertError.code);
+    console.error("[auth.sync] users upsert failed:", upsertError.message, upsertError.code);
+    return "Failed to sync user profile";
   }
+
+  return null;
+}
+
+// ── Browser-auth follow-up actions ───────────────────────────────────────────
+
+export async function finalizeLoginAction(): Promise<string | null> {
+  let user;
+  try {
+    user = await requireUser();
+  } catch {
+    return "Signed in, but the server could not read your session yet.";
+  }
+
+  const syncError = await syncCurrentUserRow(user);
+  const ctx = await buildCtx(user.id);
+
+  await withContext(ctx, () =>
+    logAudit({
+      action: "auth.login",
+      resourceType: "user",
+      resourceId: user.id,
+      metadata: syncError ? { syncError } : {},
+    }),
+  );
+
+  return syncError;
+}
+
+export async function finalizeSignUpAction(): Promise<string | null> {
+  let user;
+  try {
+    user = await requireUser();
+  } catch {
+    return "Account created, but the server could not read your session yet.";
+  }
+
+  const syncError = await syncCurrentUserRow(user);
+  const ctx = await buildCtx(user.id);
 
   await withContext(ctx, () =>
     logAudit({
       action: "auth.signup",
       resourceType: "user",
       resourceId: user.id,
-      // user.id is already captured on resourceId/actor_id. Don't duplicate
-      // the email in metadata.
-      metadata: {},
+      metadata: syncError ? { syncError } : {},
     }),
   );
 
-  // Redirect to org creation — new users have no org yet.
-  // Return a redirect signal instead of calling redirect() directly:
-  // redirect() in a Server Action throws before cookies are flushed to
-  // the HTTP response, so the session cookies from signInWithPassword
-  // are lost and the next request arrives unauthenticated.
-  // The client page reads "__redirect__:" and does window.location.replace
-  // which forces a full browser navigation with fresh cookies.
-  return "__redirect__:/org/create";
+  return syncError;
+}
+
+export async function recordAuthFailureAction(
+  event: "auth.login.failed" | "auth.signup.failed",
+  message: string,
+): Promise<void> {
+  const ctx = await buildCtx(null);
+
+  await withContext(ctx, () =>
+    logAudit({
+      action: event,
+      resourceType: "user",
+      metadata: { error: message },
+    }),
+  );
 }
 
 // ── signOutAction ─────────────────────────────────────────────────────────────

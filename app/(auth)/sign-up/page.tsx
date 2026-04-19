@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
-import { useFormStatus } from "react-dom";
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,38 +14,45 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { NotebookPen } from "lucide-react";
-import { signUpAction } from "@/lib/auth/actions";
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? "Creating account…" : "Create account"}
-    </Button>
-  );
-}
+import {
+  finalizeSignUpAction,
+  recordAuthFailureAction,
+} from "@/lib/auth/actions";
+import { getBrowserSupabase } from "@/lib/auth/client";
 
 export default function SignUpPage() {
-  const [state, formAction] = useActionState(signUpAction, null);
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Server Action returns "__redirect__:/path" to signal success.
-  // We use window.location.replace (hard navigation) so the browser
-  // picks up the fresh session cookies written by signInWithPassword
-  // before the redirect. next/navigation router.push() would be a
-  // soft navigation that reuses the stale cookie state.
-  const redirectPath =
-    typeof state === "string" && state.startsWith("__redirect__:")
-      ? state.slice("__redirect__:".length)
-      : null;
+  async function handleSubmit(formData: FormData) {
+    setPending(true);
+    setError(null);
 
-  useEffect(() => {
-    if (redirectPath) {
-      window.location.replace(redirectPath);
+    const supabase = getBrowserSupabase();
+    const email = String(formData.get("email") ?? "");
+    const password = String(formData.get("password") ?? "");
+
+    const { error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (authError) {
+      await recordAuthFailureAction("auth.signup.failed", authError.message);
+      setError(authError.message);
+      setPending(false);
+      return;
     }
-  }, [redirectPath]);
 
-  const error =
-    state && !state.startsWith("__redirect__:") ? state : null;
+    const syncError = await finalizeSignUpAction();
+    if (syncError) {
+      console.error("[sign-up] finalizeSignUpAction:", syncError);
+    }
+
+    router.replace("/org/create");
+    router.refresh();
+  }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
@@ -66,7 +73,7 @@ export default function SignUpPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={formAction} className="space-y-4">
+            <form action={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -89,15 +96,14 @@ export default function SignUpPage() {
                   placeholder="Min. 8 characters"
                 />
               </div>
-              {redirectPath && (
-                <p className="text-sm text-muted-foreground">Redirecting…</p>
-              )}
               {error && (
                 <p className="text-sm text-destructive" role="alert">
                   {error}
                 </p>
               )}
-              <SubmitButton />
+              <Button type="submit" className="w-full" disabled={pending}>
+                {pending ? "Creating account…" : "Create account"}
+              </Button>
             </form>
           </CardContent>
         </Card>
