@@ -326,3 +326,15 @@ Commits
 **Exit gate (PLAN.md Phase 4):** no confirmed bug outstanding; observability clean.
 **Gate commands:** `pnpm test:tenant-isolation && pnpm typecheck && pnpm lint`
 
+**Result:**
+- security-reviewer swept HEAD~10: 8 findings (2 crit, 2 high, 3 med, 1 low). All confirmed bugs fixed (F-0001 x-org-id smuggling, F-0002 members page missing requireOrgAccess, F-0004 email enumeration oracle, F-0005 PII in audit logs, F-0006 permission.denied null actor_id, F-0007 cookie secure flag, F-0008 createOrg audit gaps) plus Next.js-specific bugs (use server directive placement, export const runtime in use server files, AiOutputInvalidError in use server file, cookie write in Server Component).
+- observability-reviewer: 1 high (O-0002: 5xx audit class missing), 1 med (O-0001: pre-context admin lookup), 1 low (O-0003: unstructured console.error). High fixed: added logError() helper to audit.ts and wired into download route. Med and low acknowledged in REVIEW.md.
+- scope-cutter: 8 items deferred per PLAN.md section 6 cut-list order. All polish. No Never-cut item touched.
+- DEFERRED.md updated with phase-4 cut decisions.
+- REVIEW.md known-risks section populated.
+- Gate: 30/30 tenant-isolation tests green, pnpm typecheck clean, no confirmed bug outstanding.
+
+**Commits:**
+- `555f057` logging: add logError helper for 5xx events, wire into download route, add createOrg failure audit rows
+- `23b1a16` docs: record phase 4 scope-cutter decisions in DEFERRED.md and observability gaps in REVIEW.md
+
