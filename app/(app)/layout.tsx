@@ -6,17 +6,15 @@
 import { redirect } from "next/navigation";
 import { headers, cookies } from "next/headers";
 import { requireUser, getAdminSupabase } from "@/lib/auth/server";
-import { OrgSwitcher } from "@/components/org-switcher";
-import { signOutAction } from "@/lib/auth/actions";
+import { Sidebar } from "@/components/shell/sidebar";
+import { MobileSidebar } from "@/components/shell/mobile-sidebar";
+import { Separator } from "@/components/ui/separator";
 
 export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // requireUser() re-validates the JWT with Supabase's auth server.
-  // Throws if not authenticated; middleware will have redirected before this
-  // but this is a belt-and-suspenders check.
   let user;
   try {
     user = await requireUser();
@@ -26,7 +24,6 @@ export default async function AppLayout({
 
   const admin = getAdminSupabase();
 
-  // Fetch all orgs this user belongs to.
   const { data: memberships } = await admin
     .from("memberships")
     .select("org_id, role, organizations(id, name, slug)")
@@ -51,19 +48,12 @@ export default async function AppLayout({
     redirect("/org/create");
   }
 
-  // Read current org from the header forwarded by middleware.
   const h = await headers();
   const currentOrgId = h.get("x-org-id");
-
-  // If the org_id cookie doesn't match any membership, set it to the first org.
   const validCurrentOrg =
     orgs.find((o) => o.id === currentOrgId) ?? orgs[0]!;
 
   if (!currentOrgId || currentOrgId !== validCurrentOrg.id) {
-    // Set the cookie via the response — we can't do it from a Server Component
-    // directly, so we rely on the org-switcher action or use a cookie set here.
-    // For now: if there's a mismatch, the layout still renders with the first
-    // valid org. The cookie is corrected next time the user switches org.
     const cookieStore = await cookies();
     cookieStore.set("org_id", validCurrentOrg.id, {
       httpOnly: true,
@@ -73,30 +63,34 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      {/* Top nav bar */}
-      <header className="border-b border-border bg-background">
-        <div className="flex h-12 items-center justify-between px-4">
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-semibold">Notes</span>
-            <OrgSwitcher
-              currentOrgId={validCurrentOrg.id}
-              orgs={orgs}
-            />
-          </div>
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Sign out
-            </button>
-          </form>
-        </div>
-      </header>
+    <div className="flex h-screen overflow-hidden bg-background">
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-border bg-background">
+        <Sidebar
+          currentOrg={validCurrentOrg}
+          orgs={orgs}
+          userEmail={user.email ?? ""}
+        />
+      </aside>
 
-      {/* Main content */}
-      <main className="flex-1 p-4">{children}</main>
+      {/* Right pane */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Mobile top bar */}
+        <header className="flex items-center gap-2 border-b border-border px-4 h-12 md:hidden">
+          <MobileSidebar
+            currentOrg={validCurrentOrg}
+            orgs={orgs}
+            userEmail={user.email ?? ""}
+          />
+          <Separator orientation="vertical" className="h-4" />
+          <span className="text-sm font-medium">Notes</span>
+        </header>
+
+        {/* Scrollable main area */}
+        <main className="flex-1 overflow-y-auto p-6 md:p-8">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
