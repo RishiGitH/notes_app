@@ -1,4 +1,4 @@
-// Zod schemas for Anthropic AI summarizer output (Phase 3C, search-ai).
+// Zod schemas for the AI summarizer output (Phase 3C, search-ai).
 //
 // AGENTS.md section 2 item 6: "All LLM output is validated against a zod schema
 // before being stored, before being rendered, and before being passed to any

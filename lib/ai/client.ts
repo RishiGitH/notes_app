@@ -22,11 +22,6 @@ interface DoChatCompletionResponse {
   };
 }
 
-// DigitalOcean's Inference API is OpenAI-compatible chat completions.
-// Keep the model overrideable via env for deployments.
-export const DEFAULT_MODEL = "anthropic-claude-4.6-sonnet";
-export const DEFAULT_INFERENCE_ENDPOINT = "https://inference.do-ai.run/v1/chat/completions";
-
 function getModelAccessKey() {
   const key = process.env.MODEL_ACCESS_KEY;
   if (!key) {
@@ -36,11 +31,19 @@ function getModelAccessKey() {
 }
 
 export function getModelId() {
-  return process.env.DO_MODEL ?? process.env.ANTHROPIC_MODEL ?? DEFAULT_MODEL;
+  const model = process.env.DO_MODEL;
+  if (!model) {
+    throw new Error("DO_MODEL is not set");
+  }
+  return model;
 }
 
 export function getInferenceEndpoint() {
-  return process.env.DO_INFERENCE_ENDPOINT ?? DEFAULT_INFERENCE_ENDPOINT;
+  const endpoint = process.env.DO_INFERENCE_ENDPOINT;
+  if (!endpoint) {
+    throw new Error("DO_INFERENCE_ENDPOINT is not set");
+  }
+  return endpoint;
 }
 
 function coerceContentToText(content: unknown): string {

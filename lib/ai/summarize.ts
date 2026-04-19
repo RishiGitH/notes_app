@@ -102,10 +102,10 @@ export async function generateSummary(noteId: string): Promise<string> {
     // Cap content length before sending to the model provider.
     // Without a cap, a user can save an arbitrarily large note and trigger
     // unbounded token charges per generateSummary call (cost amplification).
-    // 20 000 chars ≈ 5 000 tokens — plenty for a meaningful summary and well
-    // within claude-sonnet context, while bounding per-call cost.
+    // 20 000 chars ≈ 5 000 tokens — plenty for a meaningful summary while
+    // bounding per-call cost.
     // The cap is applied BEFORE the API call so the check is synchronous and
-    // testable without a live Anthropic connection.
+    // testable without a live inference connection.
     const CONTENT_CHAR_LIMIT = 20_000;
     const rawContent = version.content ?? "";
     if (rawContent.length > CONTENT_CHAR_LIMIT) {
