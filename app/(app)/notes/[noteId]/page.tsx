@@ -3,15 +3,18 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/server";
 import { getNoteAction, listVersionsAction } from "@/lib/notes/actions";
 import { listSharesAction } from "@/lib/notes/share-actions";
+import { listNoteFiles } from "@/lib/files/actions";
+import { getLatestSummary } from "@/lib/ai/summarize";
 import { MarkdownBody } from "@/components/markdown-body";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorAlert } from "@/components/error-alert";
 import { EditForm } from "./edit-form";
 import { SharePanel } from "./share-panel";
 import { VersionsTab } from "./versions-tab";
+import { FilesTab } from "./files-tab";
+import { AiSummaryTab } from "./ai-summary-tab";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Paperclip } from "lucide-react";
 
 export default async function NoteDetailPage({
   params,
@@ -84,27 +87,42 @@ export default async function NoteDetailPage({
     return <VersionsTab versions={versionsResult} noteId={noteId} />;
   }
 
-  // --- Files tab (3C placeholder) ---
+  // --- Files tab ---
   if (tab === "files") {
+    let noteFiles: Awaited<ReturnType<typeof listNoteFiles>> = [];
+    let filesError: string | null = null;
+    try {
+      noteFiles = await listNoteFiles(noteId);
+    } catch (err) {
+      filesError = err instanceof Error ? err.message : "Could not load files";
+    }
+    if (filesError) return <ErrorAlert message={filesError} />;
     return (
-      <EmptyState
-        title="File attachments"
-        description="File upload will be available once the infra track ships."
-      >
-        <Paperclip className="h-8 w-8 text-muted-foreground/40" />
-      </EmptyState>
+      <FilesTab
+        noteId={noteId}
+        canEdit={noteResult.canEdit}
+        initialFiles={noteFiles}
+      />
     );
   }
 
-  // --- AI Summary tab (3C placeholder) ---
+  // --- AI Summary tab ---
   if (tab === "ai") {
+    let summary: Awaited<ReturnType<typeof getLatestSummary>> = null;
+    let summaryError: string | null = null;
+    try {
+      summary = await getLatestSummary(noteId);
+    } catch (err) {
+      summaryError =
+        err instanceof Error ? err.message : "Could not load summary";
+    }
+    if (summaryError) return <ErrorAlert message={summaryError} />;
     return (
-      <EmptyState
-        title="AI Summary"
-        description="AI summarization will be available once the infra track ships."
-      >
-        <Sparkles className="h-8 w-8 text-muted-foreground/40" />
-      </EmptyState>
+      <AiSummaryTab
+        noteId={noteId}
+        canEdit={noteResult.canEdit}
+        initialSummary={summary}
+      />
     );
   }
 

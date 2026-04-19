@@ -20,6 +20,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
 import { ulid } from "ulid";
 import { fileTypeFromBuffer } from "file-type";
+import { revalidatePath } from "next/cache";
 import { getDb } from "@/lib/db/client";
 import { files, notes } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/server";
@@ -175,5 +176,116 @@ export async function getFileInfo(fileId: string) {
       mime: file.mime as string,
       sizeBytes: file.size_bytes as number,
     };
+  });
+}
+
+// listNoteFiles: return all files attached to a note the caller can read.
+export interface NoteFileItem {
+  id: string;
+  path: string;
+  mime: string;
+  sizeBytes: number;
+  createdAt: Date;
+  originalName: string; // last segment of path after the ulid prefix
+}
+
+export async function listNoteFiles(
+  noteId: string,
+): Promise<NoteFileItem[]> {
+  const user = await requireUser();
+  const db = getDb();
+
+  const [note] = await db
+    .select({ id: notes.id, orgId: notes.orgId, deletedAt: notes.deletedAt })
+    .from(notes)
+    .where(and(eq(notes.id, noteId), isNull(notes.deletedAt)))
+    .limit(1);
+
+  if (!note) throw new Error("Note not found");
+
+  const ctx = await buildContext(user.id, note.orgId);
+
+  return withContext(ctx, async () => {
+    await requireOrgAccess(note.orgId, "viewer");
+
+    const rows = await db
+      .select({
+        id: files.id,
+        path: files.path,
+        mime: files.mime,
+        sizeBytes: files.sizeBytes,
+        createdAt: files.createdAt,
+      })
+      .from(files)
+      .where(and(eq(files.noteId, noteId), eq(files.orgId, note.orgId)));
+
+    return rows.map((r) => ({
+      id: r.id,
+      path: r.path,
+      mime: r.mime,
+      sizeBytes: r.sizeBytes,
+      createdAt: r.createdAt,
+      // Extract the human-readable filename: everything after the ulid prefix.
+      // Path format: <org_id>/<note_id>/<ulid>-<safe_filename>
+      originalName: r.path.split("/").pop()?.replace(/^[0-9A-Z]{26}-/, "") ?? r.path,
+    }));
+  });
+}
+
+// deleteNoteFile: delete a file record and its storage object.
+// Requires canEditNote on the parent note.
+export async function deleteNoteFile(
+  fileId: string,
+  noteId: string,
+): Promise<void> {
+  const user = await requireUser();
+  const db = getDb();
+
+  const [note] = await db
+    .select({ id: notes.id, orgId: notes.orgId, deletedAt: notes.deletedAt })
+    .from(notes)
+    .where(and(eq(notes.id, noteId), isNull(notes.deletedAt)))
+    .limit(1);
+
+  if (!note) throw new Error("Note not found");
+
+  const ctx = await buildContext(user.id, note.orgId);
+
+  await withContext(ctx, async () => {
+    await requireOrgAccess(note.orgId, "member");
+
+    const canEdit = await canEditNote(noteId, user.id);
+    if (!canEdit) throw new Error("Forbidden");
+
+    // Fetch the file to get the storage path before deleting.
+    const [fileRow] = await db
+      .select({ id: files.id, path: files.path })
+      .from(files)
+      .where(and(eq(files.id, fileId), eq(files.noteId, noteId), eq(files.orgId, note.orgId)))
+      .limit(1);
+
+    if (!fileRow) throw new Error("File not found");
+
+    // Delete from storage first; if this fails we leave the DB row intact
+    // (orphaned storage object is safer than an orphaned DB row with no object).
+    const admin = getAdminSupabase();
+    const { error: storageError } = await admin.storage
+      .from(STORAGE_BUCKET)
+      .remove([fileRow.path]);
+
+    if (storageError) {
+      throw new Error("Storage delete failed");
+    }
+
+    await db.delete(files).where(eq(files.id, fileId));
+
+    await logAudit({
+      action: "file.delete",
+      resourceType: "files",
+      resourceId: fileId,
+      metadata: { noteId, orgId: note.orgId },
+    });
+
+    revalidatePath(`/notes/${noteId}`);
   });
 }
