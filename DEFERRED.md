@@ -18,5 +18,10 @@ applicable, the commit where the decision was taken.
 
 ## Deferred during build
 
-- (populated as decisions are taken; each entry cites a commit
-  or a finding id)
+- **Global Cmd-K palette** — shadcn Command stretch goal from UI.md; deferred from Phase 3B (c42468c) because core page budget ran to budget. Can be added as a single client component in (app)/layout.tsx post-3C merge.
+- **Org rename / delete** — `updateOrgAction` and `deleteOrgAction` not in Phase 3A; org/settings renders read-only pending lead-backend shipping these.
+- **Full-text search UI** — `searchNotesAction` lives on feat/infra (3C); /search renders placeholder pending search-ai.
+- **Files tab UI** — `uploadFileAction`, `deleteFileAction`, `getSignedUrlAction` live on feat/infra (3C); Files tab renders EmptyState pending that merge.
+- **AI Summary tab UI** — `generateAiSummaryAction` and related live on feat/infra (3C); AI tab renders EmptyState pending that merge.
+- **Activity feed on dashboard** — `listAuditLogsAction` not shipped; dashboard shows placeholder.
+- **Role-change in members table** — `changeRoleAction` not in Phase 3A; members page shows role badge but no edit control.
