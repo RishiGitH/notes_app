@@ -161,6 +161,7 @@ export async function revokeShareAction(
 
 export interface ShareItem {
   userId: string;
+  userEmail: string;
   permission: "view" | "comment" | "edit";
 }
 
@@ -194,8 +195,22 @@ export async function listSharesAction(
     }),
   );
 
+  // Batch-fetch user emails for display; never logged.
+  const userIds = (data ?? []).map((s) => s.user_id as string);
+  const emailMap: Record<string, string> = {};
+  if (userIds.length > 0) {
+    const { data: usersData } = await admin
+      .from("users")
+      .select("id, email")
+      .in("id", userIds);
+    for (const u of usersData ?? []) {
+      emailMap[u.id as string] = u.email as string;
+    }
+  }
+
   return (data ?? []).map((s) => ({
     userId: s.user_id as string,
+    userEmail: emailMap[s.user_id as string] ?? "",
     permission: s.permission as "view" | "comment" | "edit",
   }));
 }
