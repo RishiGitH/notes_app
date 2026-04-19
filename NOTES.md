@@ -170,3 +170,45 @@ order, never delete.
 - `992ac0f` notes: add note CRUD server actions, create list get soft-delete restore and versioning
 - `e282283` notes: add tag and share server actions with org-scoped gates
 - `70d280c` test: add phase 3A tenant isolation cases 12 through 15
+
+## 2026-04-19 — ui-builder — Phase 3B UI track
+
+Plan
+- Merge main (3A actions) into feat/ui
+- Install @tailwindcss/typography, all missing shadcn primitives, mount Toaster
+- Build shared components: safeHref, MarkdownBody, PermissionDenied, EmptyState, ErrorAlert, LoadingSkeleton, PageHeader, DataTable (TanStack)
+- Build two-pane Notion-style shell: Sidebar, OrgSwitcherDropdown, MobileSidebar, rewrite (app)/layout.tsx
+- Build dashboard (recent notes grid + activity placeholder)
+- Build notes list (DataTable + filter bar + show-deleted toggle for admins)
+- Build note detail: layout with permission-denied gate, 6-tab shell (Read/Edit/Versions/Files/AI/Share), EditForm with conflict UX, VersionsTab, SharePanel, DiffViewer
+- Build search page (placeholder awaiting 3C searchNotesAction)
+- Build org/settings page (read-only pending updateOrgAction/deleteOrgAction from lead-backend)
+- Extend org/members: shadcn Table, role badges, remove-member button with AlertDialog
+- Polish auth pages: Card wrapper + brand icon on login/sign-up/org-create
+- NOTES.md result entry
+
+Result
+- All 13 UI.md pages delivered. Every page has loading, empty, error, and server-rendered permission-denied states (try/catch around requireOrgAccess in all RSCs).
+- Files tab and AI tab render EmptyState placeholders awaiting feat/infra (3C). Search page renders placeholder awaiting searchNotesAction.
+- Org settings renders read-only until updateOrgAction/deleteOrgAction shipped by lead-backend.
+- Edit form: explicit Save only, RHF + zod, 409 conflict → toast + Save blocked + Reload button.
+- MarkdownBody: react-markdown + remark-gfm + rehype-sanitize + safeHref urlTransform. No rehype-raw, no dangerouslySetInnerHTML.
+- Shell: two-pane (256px sidebar desktop, Sheet on mobile). Org switcher DropdownMenu. User email + sign-out in sidebar footer.
+- DataTable: TanStack useReactTable, sort indicators, filter-bar slot, row-click, muted hover.
+- DiffViewer: react-diff-viewer-continued, splitView=true, line numbers.
+- Pre-commit path-allowlist check ran before every commit — no violations.
+
+Blockers / pivots
+- Plan mode was triggered mid-execution twice and blocked commit tool calls. Resumed after user confirmed to proceed.
+- alert-dialog shadcn primitive was not in the initial batch install; added in a follow-up before typecheck.
+- searchNotesAction, updateOrgAction, deleteOrgAction not yet available from lead-backend/search-ai — noted in page placeholders and DEFERRED.md request blocks pending.
+- Cmd-K palette deferred — core pages took the full budget. Added to DEFERRED.md.
+
+Commits
+- `04dcc85` merge: main into feat/ui, pull phase 3A server actions for ui track
+- `bbca2de` ui: install typography plugin, shadcn primitives batch, and mount sonner toaster, for phase 3b pages
+- `f8e6239` ui: shared components - markdown body, permission denied, empty/error states, data table, for phase 3b
+- `483a7a5` ui: two-pane sidebar shell with notion nav org switcher and mobile sheet, replace top-bar layout
+- `e1e7c4a` ui: dashboard with recent notes grid and notes list with datatable and filters
+- `3b93e9a` ui: note detail with tabs - read edit versions share plus diff viewer and edit form with conflict UX
+- `c42468c` ui: search page, org settings, polished members table with remove action, card-wrapped auth pages
