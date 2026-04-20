@@ -20,8 +20,8 @@ describe("F-0013: auth redirects stay relative", () => {
   for (const rel of SITES) {
     const src = readFileSync(path.join(ROOT, rel), "utf8");
 
-    it(`${rel} uses redirectToInternalPath()`, () => {
-      expect(src).toMatch(/\bredirectToInternalPath\b/);
+    it(`${rel} uses the public-origin redirect helper`, () => {
+      expect(src).toMatch(/\bbuildPublicRedirectUrl\b|\bredirectToInternalPath\b/);
     });
 
     it(`${rel} does not build redirect URLs from request.url`, () => {

@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildAuthContinuePath,
   normalizeNextPath,
   resolveAuthBootstrap,
-  shouldRedirectAuthenticatedEntry,
 } from "@/lib/auth/navigation";
 import {
   buildPublicRedirectUrl,
@@ -90,22 +88,6 @@ describe("auth bootstrap routing helpers", () => {
     expect(isPublicPath("/auth/continue")).toBe(true);
   });
 
-  it("redirects authenticated GET requests away from login and sign-up", () => {
-    expect(shouldRedirectAuthenticatedEntry("GET", "/login")).toBe(true);
-    expect(shouldRedirectAuthenticatedEntry("HEAD", "/sign-up")).toBe(true);
-  });
-
-  it("does not redirect authenticated POST requests away from auth pages", () => {
-    expect(shouldRedirectAuthenticatedEntry("POST", "/login")).toBe(false);
-    expect(shouldRedirectAuthenticatedEntry("POST", "/sign-up")).toBe(false);
-  });
-
-  it("builds canonical auth-continue paths", () => {
-    expect(buildAuthContinuePath("/notes/123")).toBe(
-      "/auth/continue?next=%2Fnotes%2F123",
-    );
-  });
-
   it("creates relative redirect responses for internal auth targets", () => {
     const request = new Request("http://0.0.0.0:8080/login", {
       headers: {
@@ -116,7 +98,7 @@ describe("auth bootstrap routing helpers", () => {
     });
     const response = redirectToInternalPath(
       request as unknown as import("next/server").NextRequest,
-      buildAuthContinuePath("/notes"),
+      "/auth/continue?next=%2Fnotes",
     );
 
     expect(response.status).toBe(307);

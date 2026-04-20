@@ -1,6 +1,15 @@
 import { redirect } from "next/navigation";
-import { AUTH_CONTINUE_PATH } from "@/lib/auth/navigation";
+import { getServerSupabase } from "@/lib/auth/server";
 
 export default async function RootPage() {
-  redirect(AUTH_CONTINUE_PATH);
+  const supabase = await getServerSupabase();
+  if (!supabase) {
+    redirect("/login");
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  redirect(user ? "/notes" : "/login");
 }

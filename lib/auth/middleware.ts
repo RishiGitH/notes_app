@@ -3,9 +3,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { ulid } from "ulid";
 import {
   AUTH_CONTINUE_PATH,
-  buildAuthContinuePath,
   buildLoginPath,
-  shouldRedirectAuthenticatedEntry,
 } from "@/lib/auth/navigation";
 import { redirectToInternalPath } from "@/lib/http/redirect";
 
@@ -119,15 +117,6 @@ export async function updateSession(request: NextRequest) {
     console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: "redirect_login" }));
     return withPendingCookies(
       redirectToInternalPath(request, buildLoginPath(returnTo, "/notes")),
-    );
-  }
-
-  if (user && shouldRedirectAuthenticatedEntry(request.method, pathname)) {
-    const nextPath =
-      pathname === "/login" ? request.nextUrl.searchParams.get("next") : null;
-    console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: "redirect_continue" }));
-    return withPendingCookies(
-      redirectToInternalPath(request, buildAuthContinuePath(nextPath)),
     );
   }
 

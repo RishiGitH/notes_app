@@ -19,10 +19,7 @@ import {
   recordAuthFailureAction,
 } from "@/lib/auth/actions";
 import { getBrowserSupabase } from "@/lib/auth/client";
-import {
-  buildAuthContinuePath,
-  normalizeNextPath,
-} from "@/lib/auth/navigation";
+import { normalizeNextPath } from "@/lib/auth/navigation";
 
 export default function LoginPage() {
   return (
@@ -63,7 +60,7 @@ function LoginPageContent() {
     }
 
     const nextPath = normalizeNextPath(searchParams.get("next"), "/notes");
-    window.location.replace(buildAuthContinuePath(nextPath));
+    window.location.replace(nextPath);
   }
 
   return (
