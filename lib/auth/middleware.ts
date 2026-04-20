@@ -1,16 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { ulid } from "ulid";
+import {
+  AUTH_CONTINUE_PATH,
+  buildLoginPath,
+  shouldRedirectAuthenticatedEntry,
+} from "@/lib/auth/navigation";
 
 // Public paths that do not require authentication. Everything else under
 // (app) is protected — unauthenticated requests are redirected to /login.
-const PUBLIC_PATHS = [
+export const PUBLIC_PATHS = [
   "/login",
   "/sign-up",
+  AUTH_CONTINUE_PATH,
   "/api/health",
 ];
 
-function isPublicPath(pathname: string): boolean {
+export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
   );
@@ -32,6 +38,11 @@ function isPublicPath(pathname: string): boolean {
 export async function updateSession(request: NextRequest) {
   const start = Date.now();
   const requestId = ulid();
+  const pendingCookies: {
+    name: string;
+    value: string;
+    options: CookieOptions;
+  }[] = [];
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const publishable = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -44,7 +55,12 @@ export async function updateSession(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.delete("x-request-id");
   requestHeaders.delete("x-org-id");
+  requestHeaders.delete("x-return-to");
   requestHeaders.set("x-request-id", requestId);
+  requestHeaders.set(
+    "x-return-to",
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
 
   // Propagate current-org from the org_id cookie to a request header.
   const orgId = request.cookies.get("org_id")?.value;
@@ -74,6 +90,7 @@ export async function updateSession(request: NextRequest) {
         cookiesToSet: { name: string; value: string; options: CookieOptions }[],
       ) {
         for (const { name, value, options } of cookiesToSet) {
+          pendingCookies.push({ name, value, options });
           request.cookies.set(name, value);
           response.cookies.set(name, value, options);
         }
@@ -86,13 +103,34 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+  const returnTo = `${pathname}${request.nextUrl.search}`;
+
+  function withPendingCookies(target: NextResponse) {
+    target.headers.set("x-request-id", requestId);
+    for (const { name, value, options } of pendingCookies) {
+      target.cookies.set(name, value, options);
+    }
+    return target;
+  }
 
   if (!user && !isPublicPath(pathname)) {
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("next", pathname);
+    const loginUrl = new URL(buildLoginPath(returnTo, "/notes"), request.url);
     console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: "redirect_login" }));
-    return NextResponse.redirect(loginUrl);
+    return withPendingCookies(NextResponse.redirect(loginUrl));
+  }
+
+  if (user && shouldRedirectAuthenticatedEntry(request.method, pathname)) {
+    const continueUrl = request.nextUrl.clone();
+    continueUrl.pathname = AUTH_CONTINUE_PATH;
+    continueUrl.search = "";
+    if (pathname === "/login") {
+      const nextPath = request.nextUrl.searchParams.get("next");
+      if (nextPath) {
+        continueUrl.searchParams.set("next", nextPath);
+      }
+    }
+    console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: "redirect_continue" }));
+    return withPendingCookies(NextResponse.redirect(continueUrl));
   }
 
   console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: user ? "ok" : "public" }));

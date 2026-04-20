@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { requireUser, getAdminSupabase } from "@/lib/auth/server";
+import { buildAuthContinuePath } from "@/lib/auth/navigation";
 import { requireOrgAccess } from "@/lib/security/permissions";
 import { withContext } from "@/lib/logging/request-context";
 import { PermissionDenied } from "@/components/permission-denied";
@@ -31,7 +32,7 @@ export default async function OrgSettingsPage() {
 
   const h = await headers();
   const orgId = h.get("x-org-id");
-  if (!orgId) redirect("/org/create");
+  if (!orgId) redirect(buildAuthContinuePath(h.get("x-return-to"), "/notes"));
   const requestId = h.get("x-request-id") ?? "unknown";
 
   let membership;

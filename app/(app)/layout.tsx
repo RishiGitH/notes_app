@@ -5,12 +5,13 @@
 //
 // If the user has no org memberships, renders children directly (no shell).
 // The /org/create page (which lives inside this route group) handles its own
-// full-screen layout. Individual app pages guard against missing orgId and
-// redirect to /org/create themselves.
+// full-screen layout. If the org cookie is missing or stale for an existing
+// member, the canonical /auth/continue bootstrap route repairs it.
 
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { requireUser, getAdminSupabase } from "@/lib/auth/server";
+import { buildAuthContinuePath } from "@/lib/auth/navigation";
 import { Sidebar } from "@/components/shell/sidebar";
 import { MobileSidebar } from "@/components/shell/mobile-sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -68,18 +69,19 @@ export default async function AppLayout({
     // No org memberships yet — render children directly (no sidebar shell).
     // The /org/create page handles its own full-screen layout.
     // We do NOT redirect here: /org/create is inside this route group, so
-    // redirecting to it would loop. Individual app pages redirect themselves.
+    // redirecting to it would loop. The bootstrap route handles first-time vs.
+    // existing-user routing when a page needs org context.
     return <>{children}</>;
   }
 
   const h = await headers();
   const currentOrgId = h.get("x-org-id");
-  // If the cookie is stale (points to an org the user no longer belongs to,
-  // or is absent), fall back to the first valid org for this render. The cookie
-  // will be corrected on the next switchOrgAction call. Server Components cannot
-  // write cookies — that is only possible in Server Actions or Route Handlers.
-  const validCurrentOrg =
-    orgs.find((o) => o.id === currentOrgId) ?? orgs[0]!;
+  const returnTo = h.get("x-return-to");
+  const validCurrentOrg = orgs.find((o) => o.id === currentOrgId);
+
+  if (!validCurrentOrg) {
+    redirect(buildAuthContinuePath(returnTo, "/notes"));
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

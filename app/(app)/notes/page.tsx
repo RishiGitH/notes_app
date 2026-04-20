@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { requireUser } from "@/lib/auth/server";
+import { buildAuthContinuePath } from "@/lib/auth/navigation";
 import { requireOrgAccess } from "@/lib/security/permissions";
 import { withContext } from "@/lib/logging/request-context";
 import { listNotesAction } from "@/lib/notes/actions";
@@ -27,7 +28,7 @@ export default async function NotesPage({
 
   const h = await headers();
   const orgId = h.get("x-org-id");
-  if (!orgId) redirect("/org/create");
+  if (!orgId) redirect(buildAuthContinuePath(h.get("x-return-to"), "/notes"));
   const requestId = h.get("x-request-id") ?? "unknown";
 
   let membership;

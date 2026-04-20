@@ -1,10 +1,6 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth/server";
+import { AUTH_CONTINUE_PATH } from "@/lib/auth/navigation";
 
 export default async function RootPage() {
-  const session = await getSession();
-  if (!session) {
-    redirect("/login");
-  }
-  redirect("/notes");
+  redirect(AUTH_CONTINUE_PATH);
 }

@@ -11,7 +11,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    include: ["tests/unit/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "tests/unit/**/*.{test,spec}.{ts,tsx}",
+      "tests/verify/**/*.{test,spec}.{ts,tsx}",
+    ],
     hookTimeout: 10_000,
     testTimeout: 10_000,
   },

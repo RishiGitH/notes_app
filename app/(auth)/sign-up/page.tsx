@@ -18,6 +18,7 @@ import {
   recordAuthFailureAction,
 } from "@/lib/auth/actions";
 import { getBrowserSupabase } from "@/lib/auth/client";
+import { buildAuthContinuePath } from "@/lib/auth/navigation";
 
 export default function SignUpPage() {
   const [pending, setPending] = useState(false);
@@ -48,7 +49,7 @@ export default function SignUpPage() {
       console.error("[sign-up] finalizeSignUpAction:", syncError);
     }
 
-    window.location.replace("/org/create");
+    window.location.replace(buildAuthContinuePath());
   }
 
   return (
