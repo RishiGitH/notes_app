@@ -2,6 +2,11 @@
 // Reads the current org from the x-org-id header (set by middleware from the
 // org_id cookie) and fetches the user's org memberships to populate the
 // org switcher.
+
+// Force dynamic so Next.js never statically caches this layout.
+// Without this, the build pre-renders a redirect response and the CDN serves
+// it stale with s-maxage=31536000, bypassing auth entirely.
+export const dynamic = "force-dynamic";
 //
 // If the user has no org memberships, renders children directly (no shell).
 // The /org/create page (which lives inside this route group) handles its own
