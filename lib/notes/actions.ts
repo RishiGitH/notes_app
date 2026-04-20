@@ -113,6 +113,23 @@ export async function createNoteAction(
 
 // ── listNotesAction ───────────────────────────────────────────────────────────
 
+export interface ListNotesParams {
+  orgId: string;
+  includeDeleted?: boolean;
+  page?: number;       // 1-based, default 1
+  pageSize?: number;   // default 25, max 100
+  q?: string;         // title ILIKE filter
+  visibility?: "all" | "private" | "org" | "shared";
+  tags?: string[];
+}
+
+export interface ListNotesResult {
+  notes: NoteListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface NoteListItem {
   id: string;
   title: string;
@@ -121,12 +138,27 @@ export interface NoteListItem {
   authorId: string;
   deletedAt: string | null;
   tags: string[];
+  isSharedWithMe: boolean;
 }
 
+const listNotesParamsSchema = z.object({
+  orgId: z.string().uuid(),
+  includeDeleted: z.boolean().optional().default(false),
+  page: z.number().int().min(1).optional().default(1),
+  pageSize: z.number().int().min(1).max(100).optional().default(25),
+  q: z.string().max(200).optional(),
+  visibility: z.enum(["all", "private", "org", "shared"]).optional().default("all"),
+  tags: z.array(z.string().max(64)).max(20).optional().default([]),
+});
+
 export async function listNotesAction(
-  orgId: string,
-  includeDeleted = false,
-): Promise<NoteListItem[] | { error: string }> {
+  params: ListNotesParams,
+): Promise<ListNotesResult | { error: string }> {
+  const parsed = listNotesParamsSchema.safeParse(params);
+  if (!parsed.success) return { error: parsed.error.errors[0]?.message ?? "Invalid params" };
+
+  const { orgId, includeDeleted, page, pageSize, q, visibility, tags } = parsed.data;
+
   const user = await requireUser();
   const ctx = await buildCtx(user.id);
 
@@ -136,39 +168,94 @@ export async function listNotesAction(
   const supabase = await getServerSupabase();
   if (!supabase) return { error: "Service unavailable" };
 
+  // For the "shared" filter we need !inner on note_shares to only return notes
+  // where the current user has an explicit share grant. All other filters use
+  // a left-join embed so the parent note is never hidden by the embed.
+  const selectFields =
+    "id, title, visibility, updated_at, author_id, deleted_at, " +
+    "note_tags(tags(name)), " +
+    (visibility === "shared"
+      ? "note_shares!inner(user_id)"
+      : "note_shares(user_id)");
+
   let query = supabase
     .from("notes")
-    .select("id, title, visibility, updated_at, author_id, deleted_at, note_tags(tags(name))")
-    .eq("org_id", orgId)
-    .order("updated_at", { ascending: false });
+    .select(selectFields, { count: "exact" })
+    .eq("org_id", orgId);
 
   if (!includeDeleted) {
     query = query.is("deleted_at", null);
   }
 
-  const { data, error } = await query;
+  // Visibility filter
+  if (visibility === "private") {
+    // "My private notes" — authored by me, not shared-to-me (which shows as "shared")
+    query = query.eq("visibility", "private").eq("author_id", user.id);
+  } else if (visibility === "org") {
+    query = query.in("visibility", ["org", "public_in_org"]);
+  } else if (visibility === "shared") {
+    // !inner on note_shares already limits to "shared with me" rows via RLS.
+    // Exclude own notes so the author never sees their own note as "Shared with you".
+    query = query.neq("author_id", user.id);
+  }
+
+  // Title search
+  if (q) {
+    query = query.ilike("title", `%${q}%`);
+  }
+
+  // Tag filter — resolve note IDs matching any of the requested tags, then .in()
+  if (tags.length > 0) {
+    const { data: tagNoteRows } = await supabase
+      .from("note_tags")
+      .select("note_id, tags!inner(name, org_id)")
+      .in("tags.name", tags)
+      .eq("tags.org_id", orgId);
+    const tagNoteIds = [...new Set(
+      (tagNoteRows as unknown as { note_id: string }[] | null ?? []).map((r) => r.note_id),
+    )];
+    if (tagNoteIds.length === 0) {
+      return { notes: [], total: 0, page, pageSize };
+    }
+    query = query.in("id", tagNoteIds);
+  }
+
+  // Pagination
+  const from = (page - 1) * pageSize;
+  query = query.order("updated_at", { ascending: false }).range(from, from + pageSize - 1);
+
+  const { data, count, error } = await query;
 
   if (error) return { error: error.message };
+
+  const total = count ?? 0;
 
   await withContext(ctx, () =>
     logAudit({
       action: "note.list",
       resourceType: "note",
-      metadata: { orgId, count: data?.length ?? 0 },
+      metadata: { orgId, count: total, page, pageSize },
     }),
   );
 
-  return (data ?? []).map((n) => ({
-    id: n.id as string,
-    title: n.title as string,
-    visibility: n.visibility as "private" | "org" | "public_in_org",
-    updatedAt: n.updated_at as string,
-    authorId: n.author_id as string,
-    deletedAt: n.deleted_at as string | null,
-    tags: ((n.note_tags as unknown as { tags: { name: string } | null }[] | null) ?? [])
-      .map((nt) => nt.tags?.name)
-      .filter((name): name is string => typeof name === "string"),
-  }));
+  const notes = (data as unknown as Record<string, unknown>[] ?? []).map((n) => {
+    const shareRows = (n["note_shares"] as { user_id: string }[] | null) ?? [];
+    const isSharedWithMe = shareRows.length > 0;
+    return {
+      id: n["id"] as string,
+      title: n["title"] as string,
+      visibility: n["visibility"] as "private" | "org" | "public_in_org",
+      updatedAt: n["updated_at"] as string,
+      authorId: n["author_id"] as string,
+      deletedAt: n["deleted_at"] as string | null,
+      tags: ((n["note_tags"] as { tags: { name: string } | null }[] | null) ?? [])
+        .map((nt) => nt.tags?.name)
+        .filter((name): name is string => typeof name === "string"),
+      isSharedWithMe,
+    };
+  });
+
+  return { notes, total, page, pageSize };
 }
 
 // ── getNoteAction ─────────────────────────────────────────────────────────────
@@ -185,6 +272,7 @@ export interface NoteDetail {
   updatedAt: string;
   canEdit: boolean;
   tags: string[];
+  isSharedWithMe: boolean;
 }
 
 export async function getNoteAction(
@@ -243,6 +331,17 @@ export async function getNoteAction(
     .map((nt) => nt.tags?.name)
     .filter((n): n is string => typeof n === "string");
 
+  // Check if this note was explicitly shared with the current user via note_shares.
+  // RLS on note_shares is user_id = auth.uid() so the user-scoped client only returns
+  // the caller's own share row — no data leakage.
+  const { data: myShare } = await supabase
+    .from("note_shares")
+    .select("permission")
+    .eq("note_id", noteId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const isSharedWithMe = !!myShare;
+
   await withContext(ctx, () =>
     logAudit({
       action: "note.view",
@@ -264,6 +363,7 @@ export async function getNoteAction(
     updatedAt: note.updated_at as string,
     canEdit: editAccess,
     tags,
+    isSharedWithMe,
   };
 }
 

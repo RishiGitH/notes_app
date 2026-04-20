@@ -8,7 +8,7 @@ export const searchNotesInput = z.object({
     .min(1, "Query must not be empty")
     .max(500, "Query must be at most 500 characters")
     .trim(),
-  limit: z.number().int().min(1).max(50).default(20),
+  limit: z.number().int().min(1).max(50).default(50),
   offset: z.number().int().min(0).default(0),
 });
 
@@ -25,3 +25,10 @@ export const searchNoteResult = z.object({
 });
 
 export type SearchNoteResult = z.infer<typeof searchNoteResult>;
+
+export interface SearchNotesResponse {
+  results: SearchNoteResult[];
+  total: number;
+  limit: number;
+  offset: number;
+}

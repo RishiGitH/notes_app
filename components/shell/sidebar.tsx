@@ -31,7 +31,7 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/notes", label: "Notes", icon: FileText },
   { href: "/search", label: "Search", icon: Search },
   { href: "/org/members", label: "Members", icon: Users },
@@ -54,10 +54,7 @@ export function Sidebar({ currentOrg, orgs, userEmail }: SidebarProps) {
       <ScrollArea className="flex-1 px-2">
         <nav className="space-y-0.5 py-1">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active =
-              href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(href);
+            const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
             return (
               <Button
                 key={href}

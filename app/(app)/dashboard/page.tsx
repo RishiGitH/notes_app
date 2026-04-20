@@ -13,9 +13,9 @@ import { PermissionDenied } from "@/components/permission-denied";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { NewNoteButton } from "./notes/new-note-button";
+import { NewNoteButton } from "../notes/new-note-button";
 import { FileText, Clock } from "lucide-react";
-import { VISIBILITY_VARIANTS, VISIBILITY_LABELS, formatDateShort } from "@/lib/utils/note-display";
+import { VISIBILITY_VARIANTS, VISIBILITY_LABELS, resolveVisibilityKey, formatDateShort } from "@/lib/utils/note-display";
 
 export default async function DashboardPage() {
   let user;
@@ -39,7 +39,7 @@ export default async function DashboardPage() {
     return <PermissionDenied />;
   }
 
-  const result = await listNotesAction(orgId);
+  const result = await listNotesAction({ orgId, pageSize: 10 });
 
   if ("error" in result) {
     return (
@@ -53,7 +53,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const recentNotes = result.filter((n) => !n.deletedAt).slice(0, 10);
+  const recentNotes = result.notes.filter((n) => !n.deletedAt);
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -88,12 +88,21 @@ export default async function DashboardPage() {
                           {note.title || "Untitled"}
                         </p>
                       </div>
-                      <Badge
-                        variant={VISIBILITY_VARIANTS[note.visibility] ?? "outline"}
-                        className="shrink-0 text-xs"
-                      >
-                        {VISIBILITY_LABELS[note.visibility] ?? note.visibility}
-                      </Badge>
+                      {(() => {
+                          const visKey = resolveVisibilityKey(
+                            note.visibility,
+                            note.isSharedWithMe,
+                            note.authorId === user.id,
+                          );
+                          return (
+                            <Badge
+                              variant={VISIBILITY_VARIANTS[visKey] ?? "outline"}
+                              className="shrink-0 text-xs"
+                            >
+                              {VISIBILITY_LABELS[visKey] ?? note.visibility}
+                            </Badge>
+                          );
+                        })()}
                     </div>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />

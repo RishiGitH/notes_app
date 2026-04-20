@@ -45,12 +45,6 @@ interface SharePanelProps {
   canManage: boolean;
 }
 
-const VISIBILITY_LABELS: Record<string, string> = {
-  private: "Private — only you",
-  org: "Org members",
-  public_in_org: "Org members",
-};
-
 const PERMISSION_LABELS: Record<string, string> = {
   view: "View",
   comment: "Comment",

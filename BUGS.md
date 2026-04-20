@@ -1,7 +1,7 @@
 # BUGS.md
 
 Stuff I caught and fixed. Each has a commit SHA on main.
-No SHA = not a bug yet 
+No SHA = not a bug yet
 
 **Format:**
 
@@ -15,9 +15,8 @@ First paragraph: what happened
 Second paragraph: How I fixed it
 ```
 
-Severity guide: 
-crit/high = touches tenant isolation, auth, secret
-keys, or the AI path. 
+Severity guide:
+crit/high = touches tenant isolation, auth, secret keys, or the AI path.
 med = same-tenant info leak, bad logging.
 low = build/config/hygiene.
 
@@ -25,7 +24,7 @@ low = build/config/hygiene.
 
 ## Ran on Node 16 and used legacy Supabase key names
 
-**high** — fix `<sha>`
+**high** — fix `5b4c56e` `7cc3e54`
 
 Two in one. Agent was on Node 16 despite the Node 20 pin — caught it
 when having issues with AsyncLocalStorage and using supabase serivce role directly
@@ -37,7 +36,7 @@ Updated instructions for node version and updated all refrences to use the corre
 
 ## uuid package installed for ID generation when Postgres already handles it
 
-**low** — fix `<sha>`
+**low** — fix `ece63cf`
 
 Agent unecessary installed uuid package to geenrate id when postgres already handles it.
 Also app code should never touch it. Also it installed @types/uuid which is deprecated.
@@ -50,10 +49,9 @@ Removed the dev dependency and added a note in the agents.md to never use uuid i
 
 **crit** — fix `023e167`
 
-
 The RLS policy would only check that if the user is a member of the org
 and has access to the note. It did not check that the user is a member
-of the new org after a user send a request to update a note that is in ORG A 
+of the new org after a user send a request to update a note that is in ORG A
 with org_id = ORG B. This notes and all it's details would move to ORG B.
 
 Note:- We could have also used RLS with a CHECK constraint but that could have
@@ -61,9 +59,8 @@ lead to recursion risk since we would have to self reference the node row for or
 Also this also protect any opertations from our service role key unless we want it to
 happen.
 
-
-Added an immutable trigger that throws error if the org_id changes from its 
-original value. 
+Added an immutable trigger that throws error if the org_id changes from its
+original value.
 
 ---
 
@@ -71,22 +68,18 @@ original value.
 
 **crit** — fix `198c27f`
 
-
-After fixing the note's org_id loophole, I checked other tables with 
+After fixing the note's org_id loophole, I checked other tables with
 an update policy and found the same loophole in four of them.
 
-1. `note_shares` — `note_id` could be changed so a share pointing at 
-one note now points at another.
+1. `note_shares` — `note_id` could be changed so a share pointing at
+   one note now points at another.
 2. `memberships` — both `user_id` and `org_id` were changeable, meaning an
- admin's UPDATE for a role change could also silently transfer someone's
- membership to a different user or a different org. 
-
+   admin's UPDATE for a role change could also silently transfer someone's
+   membership to a different user or a different org.
 3. `tags` — admin rename policy didn't block changing `org_id`, so a tag
- could be moved cross-tenant. 
- 
+   could be moved cross-tenant.
 4. `ai_summaries` — both `note_id` and `org_id`
- changeable, same cross-tenant leak as notes. 
-  
+   changeable, same cross-tenant leak as notes.
 
 Added migration 0007 that adds a immutable trigger on each of the four
 tables. The trigger basically does the same thing check if the old and new
@@ -94,30 +87,24 @@ IDs are same and if not throws an error.
 
 ---
 
-
 ## Auth was not verifying session tampered tokens would have bypassed security
 
 **high** — fix `3f6b000`
 
-
-the require user logic was flawed. it was only checking if the user is logged in 
-but not if the session is valid or not. An old session token or a 
+the require user logic was flawed. it was only checking if the user is logged in
+but not if the session is valid or not. An old session token or a
 tampered one would have bypassed security.
 
-
-added getUser() which verifies session directly with supabase auth. so 
+added getUser() which verifies session directly with supabase auth. so
 if session is expired or tampered it will be caught immediately.
 
-
 ---
-
 
 ## addmember action leaked whether a user was registered or not
 
 **med** — fix `f54ad9d`
 
-
-using addmember action and anyone can brute force and find out which emails are registered. The response told whether the user was registered or not and if they were already a member or not. 
+using addmember action and anyone can brute force and find out which emails are registered. The response told whether the user was registered or not and if they were already a member or not.
 
 Update the response to a genric error message and fixed it.
 
@@ -127,18 +114,15 @@ Update the response to a genric error message and fixed it.
 
 **high** — fix `858a03f`
 
-
-When a new user signs up for the app, they don't have an org yet. So the system redirects them to the create-org page. But the create-org page is inside the (app) route group, 
-which means the (app)/layout.tsx runs first for every request to that URL. 
-That layout checks "does this user have any org memberships?" and if not, redirects to /org/create. 
+When a new user signs up for the app, they don't have an org yet. So the system redirects them to the create-org page. But the create-org page is inside the (app) route group,
+which means the (app)/layout.tsx runs first for every request to that URL.
+That layout checks "does this user have any org memberships?" and if not, redirects to /org/create.
 Hence create an infinte loop of redirects.
 
-Removed redirect from layout and now when a user without an org visits /org/create 
+Removed redirect from layout and now when a user without an org visits /org/create
 page it renders the page directly.
 
-
 ---
-
 
 ## An admin of an org could list, inject, or revoke shares on notes they don't own
 
@@ -150,11 +134,9 @@ from another org.
 
 Added `.eq("org_id", orgId)` to the notes select inside `canManageShares`
 so the note lookup only succeeds if the note belongs to the same org the
-caller is operating in. 
-
+caller is operating in.
 
 ---
-
 
 ## Files attached to private notes were downloadable by any org member
 
@@ -162,17 +144,15 @@ caller is operating in.
 
 Anyone could download files attached to private notes by guessing file paths.
 Issue was in RLS policy for storage bucket which did not check note visibility.
-It only checked whether user was an org member or not. The app was enforcing 
+It only checked whether user was an org member or not. The app was enforcing
 org policies but the user can directly bypass it and download files using supabase storage api
 without going through our app.
-
 
 Replaced the SELECT policy (migration 0010) with one that mirrors the notes
 visibility model: the author always has access; org-wide notes are readable
 by any org member; private notes require an explicit `note_shares` row.
 
 ---
-
 
 ## AI summarizer allows large notes to Anthropic with no size check
 
@@ -181,7 +161,7 @@ by any org member; private notes require an explicit `note_shares` row.
 Anyone can spam the summary api with no limit on note size.
 they could have a billion character note and spam it repeatedly.
 
-Fixed it by adding a 20,000 character hard cap on note size. 
+Fixed it by adding a 20,000 character hard cap on note size.
 
 ---
 
@@ -217,20 +197,19 @@ The root cause was that `getFileInfo` used the admin (service-role) database cli
 
 ---
 
-
 ## digital ocean inferenc eicnorrect and dokcer file incorrect condifuration hardcoded port
 
-**high** — fix 
+**high** — fix `cfaee11` `786b52f` `37b15b4`
 
-Changed digital ocean endpoint in server code to use env var and also fixed the docker file to use env var for port instead of hardcoding it to 3000. 
+Changed digital ocean endpoint in server code to use env var and also fixed the docker file to use env var for port instead of hardcoding it to 3000.
 
-Added proper health check 
+Added proper health check
 
 ---
 
 ## Search never returned tag-name hits; notes title "works" with content "NOTE" returned zero results
 
-**high** — fix (migration 0011_fts_tags_and_backfill.sql)
+**high** — fix `9301650`
 
 The assignment requires search across titles, content, AND tags. Migration 0008 built
 `search_tsv` from only title (weight A) and content (weight B). Tag names were never

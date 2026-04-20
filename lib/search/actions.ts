@@ -19,7 +19,7 @@
 // Node runtime: "use server" files always run on Node; export const runtime
 // is not valid in 'use server' modules and has been removed.
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql, count as drizzleCount } from "drizzle-orm";
 import { headers } from "next/headers";
 import { getDb } from "@/lib/db/client";
 import { notes, noteVersions, noteTags, tags } from "@/lib/db/schema";
@@ -27,7 +27,7 @@ import { requireUser } from "@/lib/auth/server";
 import { requireOrgAccess } from "@/lib/security/permissions";
 import { logAudit } from "@/lib/logging/audit";
 import { withContext } from "@/lib/logging/request-context";
-import { searchNotesInput, type SearchNoteResult } from "@/lib/search/schemas";
+import { searchNotesInput, type SearchNoteResult, type SearchNotesResponse } from "@/lib/search/schemas";
 
 // Sentinel values used as ts_headline StartSel/StopSel. They use ASCII control
 // characters (STX/ETX, codepoints 2 and 3) that valid Unicode text input will
@@ -55,7 +55,7 @@ function sanitizeSnippet(raw: string): string {
 
 export async function searchNotes(
   rawInput: unknown,
-): Promise<SearchNoteResult[]> {
+): Promise<SearchNotesResponse> {
   const user = await requireUser();
 
   const parsed = searchNotesInput.safeParse(rawInput);
@@ -144,50 +144,63 @@ export async function searchNotes(
     // with matched terms wrapped in sentinels (title is short — no truncation needed).
     const titleHighlightOptions = `HighlightAll=true, StartSel=${SNIPPET_MARK_OPEN}, StopSel=${SNIPPET_MARK_CLOSE}`;
 
-    const rows = await db
-      .select({
-        id: notes.id,
-        title: notes.title,
-        orgId: notes.orgId,
-        updatedAt: notes.updatedAt,
-        titleHighlight: sql<string | null>`
-          ts_headline(
-            'english',
-            ${notes.title},
-            ${tsQuery},
-            ${titleHighlightOptions}
-          )
-        `,
-        snippet: sql<string | null>`
-          ts_headline(
-            'english',
-            coalesce(${noteVersions.content}, ''),
-            ${tsQuery},
-            ${snippetOptions}
-          )
-        `,
-      })
-      .from(notes)
-      .leftJoin(
-        noteVersions,
-        eq(noteVersions.id, notes.currentVersionId),
-      )
-      .where(
-        and(
-          eq(notes.orgId, orgId),           // <-- defense in depth (AGENTS.md item 10)
-          isNull(notes.deletedAt),
-          sql`${notes.searchTsv} @@ ${tsQuery}`,
-        ),
-      )
-      .orderBy(sql`ts_rank(${notes.searchTsv}, ${tsQuery}) desc`)
-      .limit(limit)
-      .offset(offset);
+    const whereClause = and(
+      eq(notes.orgId, orgId),           // <-- defense in depth (AGENTS.md item 10)
+      isNull(notes.deletedAt),
+      sql`${notes.searchTsv} @@ ${tsQuery}`,
+    );
+
+    const [rows, countRows] = await Promise.all([
+      db
+        .select({
+          id: notes.id,
+          title: notes.title,
+          orgId: notes.orgId,
+          updatedAt: notes.updatedAt,
+          titleHighlight: sql<string | null>`
+            ts_headline(
+              'english',
+              ${notes.title},
+              ${tsQuery},
+              ${titleHighlightOptions}
+            )
+          `,
+          snippet: sql<string | null>`
+            ts_headline(
+              'english',
+              coalesce(${noteVersions.content}, ''),
+              ${tsQuery},
+              ${snippetOptions}
+            )
+          `,
+        })
+        .from(notes)
+        .leftJoin(
+          noteVersions,
+          eq(noteVersions.id, notes.currentVersionId),
+        )
+        .where(whereClause)
+        .orderBy(sql`ts_rank(${notes.searchTsv}, ${tsQuery}) desc`)
+        .limit(limit)
+        .offset(offset),
+
+      // Count query: same WHERE clause as the rows query — total is always
+      // consistent with what the user can page through. No note_versions join
+      // needed since we're only counting notes.
+      db
+        .select({ count: drizzleCount() })
+        .from(notes)
+        .where(whereClause),
+    ]);
+
+    const total = Number(countRows[0]?.count ?? 0);
 
     await logAudit({
       action: "search.query",
       resourceType: "notes",
       metadata: {
         hitCount: rows.length,
+        total,
         // No query text — may contain PII. (AGENTS.md section 11)
       },
     });
@@ -213,7 +226,7 @@ export async function searchNotes(
       }
     }
 
-    return rows.map((r) => ({
+    const results: SearchNoteResult[] = rows.map((r) => ({
       id: r.id,
       title: r.title,
       titleHighlight: r.titleHighlight ? sanitizeSnippet(r.titleHighlight) : null,
@@ -222,5 +235,7 @@ export async function searchNotes(
       updatedAt: r.updatedAt,
       tags: tagsByNoteId[r.id] ?? [],
     }));
+
+    return { results, total, limit, offset };
   });
 }

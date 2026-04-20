@@ -39,7 +39,7 @@ import {
   Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { VISIBILITY_VARIANTS, VISIBILITY_LABELS, formatDate } from "@/lib/utils/note-display";
+import { VISIBILITY_VARIANTS, VISIBILITY_LABELS, resolveVisibilityKey, formatDate } from "@/lib/utils/note-display";
 
 const TABS = [
   { id: "read", label: "Read", icon: Eye, href: "" },
@@ -55,6 +55,7 @@ interface NoteDetailShellProps {
   note: NoteDetail;
   orgId: string;
   isAdmin: boolean;
+  isAuthor: boolean;
   children: React.ReactNode;
 }
 
@@ -62,6 +63,7 @@ export function NoteDetailShell({
   note,
   orgId,
   isAdmin,
+  isAuthor,
   children,
 }: NoteDetailShellProps) {
   const pathname = usePathname();
@@ -112,12 +114,14 @@ export function NoteDetailShell({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Badge
-            variant={VISIBILITY_VARIANTS[note.visibility] ?? "outline"}
-            className="text-xs"
-          >
-            {VISIBILITY_LABELS[note.visibility] ?? note.visibility}
-          </Badge>
+          {(() => {
+            const visKey = resolveVisibilityKey(note.visibility, note.isSharedWithMe, isAuthor);
+            return (
+              <Badge variant={VISIBILITY_VARIANTS[visKey] ?? "outline"} className="text-xs">
+                {VISIBILITY_LABELS[visKey] ?? note.visibility}
+              </Badge>
+            );
+          })()}
           {(note.canEdit || isAdmin) && (
             <>
               <DropdownMenu>

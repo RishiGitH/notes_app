@@ -47,9 +47,10 @@ export default async function NoteDetailLayout({
   }
 
   const isAdmin = membership.role === "admin" || membership.role === "owner";
+  const isAuthor = result.authorId === user.id;
 
   return (
-    <NoteDetailShell note={result} orgId={orgId} isAdmin={isAdmin}>
+    <NoteDetailShell note={result} orgId={orgId} isAdmin={isAdmin} isAuthor={isAuthor}>
       {children}
     </NoteDetailShell>
   );
