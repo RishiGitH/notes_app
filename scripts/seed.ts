@@ -16,6 +16,9 @@
  */
 
 import "dotenv/config";
+import { config } from "dotenv";
+import { resolve } from "path";
+config({ path: resolve(process.cwd(), ".env.local"), override: true });
 import postgres from "postgres";
 import { faker } from "@faker-js/faker";
 
