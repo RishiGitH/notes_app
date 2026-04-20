@@ -197,7 +197,7 @@ The root cause was that `getFileInfo` used the admin (service-role) database cli
 
 ---
 
-## digital ocean inferenc eicnorrect and dokcer file incorrect condifuration hardcoded port
+## digital ocean AI inference setup issues and  docker file incorrect configuration hardcoded port
 
 **high** — fix `cfaee11` `786b52f` `37b15b4`
 
