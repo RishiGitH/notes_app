@@ -118,7 +118,7 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isPublicPath(pathname)) {
     console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: "redirect_login" }));
     return withPendingCookies(
-      redirectToInternalPath(buildLoginPath(returnTo, "/notes")),
+      redirectToInternalPath(request, buildLoginPath(returnTo, "/notes")),
     );
   }
 
@@ -127,7 +127,7 @@ export async function updateSession(request: NextRequest) {
       pathname === "/login" ? request.nextUrl.searchParams.get("next") : null;
     console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: "redirect_continue" }));
     return withPendingCookies(
-      redirectToInternalPath(buildAuthContinuePath(nextPath)),
+      redirectToInternalPath(request, buildAuthContinuePath(nextPath)),
     );
   }
 

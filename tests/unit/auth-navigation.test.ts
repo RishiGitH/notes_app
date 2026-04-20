@@ -5,7 +5,10 @@ import {
   resolveAuthBootstrap,
   shouldRedirectAuthenticatedEntry,
 } from "@/lib/auth/navigation";
-import { redirectToInternalPath } from "@/lib/http/redirect";
+import {
+  buildPublicRedirectUrl,
+  redirectToInternalPath,
+} from "@/lib/http/redirect";
 import { isPublicPath } from "@/lib/auth/middleware";
 
 describe("normalizeNextPath", () => {
@@ -104,17 +107,50 @@ describe("auth bootstrap routing helpers", () => {
   });
 
   it("creates relative redirect responses for internal auth targets", () => {
-    const response = redirectToInternalPath(buildAuthContinuePath("/notes"));
+    const request = new Request("http://0.0.0.0:8080/login", {
+      headers: {
+        host: "0.0.0.0:8080",
+        "x-forwarded-host": "notes.example.com",
+        "x-forwarded-proto": "https",
+      },
+    });
+    const response = redirectToInternalPath(
+      request as unknown as import("next/server").NextRequest,
+      buildAuthContinuePath("/notes"),
+    );
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(
-      "/auth/continue?next=%2Fnotes",
+      "https://notes.example.com/auth/continue?next=%2Fnotes",
     );
   });
 
   it("rejects absolute redirect targets", () => {
-    expect(() => redirectToInternalPath("http://evil.test/login")).toThrow(
-      /internal path/i,
-    );
+    const request = new Request("http://localhost:3000/login");
+    expect(() =>
+      redirectToInternalPath(
+        request as unknown as import("next/server").NextRequest,
+        "http://evil.test/login",
+      ),
+    ).toThrow(/internal path/i);
+  });
+
+  it("prefers forwarded host and proto over internal request origin", () => {
+    const request = new Request("http://0.0.0.0:8080/auth/continue", {
+      headers: {
+        host: "0.0.0.0:8080",
+        "x-forwarded-host": "app.up.railway.app",
+        "x-forwarded-proto": "https",
+      },
+    });
+
+    expect(
+      String(
+        buildPublicRedirectUrl(
+          request as unknown as import("next/server").NextRequest,
+          "/login?next=%2Fnotes",
+        ),
+      ),
+    ).toBe("https://app.up.railway.app/login?next=%2Fnotes");
   });
 });

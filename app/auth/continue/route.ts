@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       if (authError) {
         console.warn("[auth/continue] getUser failed:", authError.message);
       }
-      return redirectToInternalPath(buildLoginPath(normalizedNext));
+      return redirectToInternalPath(request, buildLoginPath(normalizedNext));
     }
 
     const admin = getAdminSupabase();
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
       decision.orgCookieToSet ?? "none",
     );
 
-    const response = redirectToInternalPath(decision.destination);
+    const response = redirectToInternalPath(request, decision.destination);
 
     if (decision.orgCookieToSet) {
       response.cookies.set("org_id", decision.orgCookieToSet, {
