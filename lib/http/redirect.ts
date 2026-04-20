@@ -81,9 +81,11 @@ export function buildPublicRedirectUrl(
     return new URL(internalTarget, `${fallbackProtocol}://${host}`);
   }
 
-  throw new Error(
-    `Unable to determine public origin for redirect target: ${internalTarget}`,
-  );
+  // All candidates were rejected (e.g. local Docker with NODE_ENV=production
+  // and no x-forwarded-host header). Fall back to the request's own URL as
+  // the base — this is safe because we already validated the target is an
+  // internal path (starts with /).
+  return new URL(internalTarget, requestUrl.origin);
 }
 
 export function redirectToInternalPath(
