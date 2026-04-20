@@ -130,11 +130,8 @@ export function SharePanel({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(VISIBILITY_LABELS).map(([val, label]) => (
-              <SelectItem key={val} value={val}>
-                {label}
-              </SelectItem>
-            ))}
+            <SelectItem value="private">Private — only you</SelectItem>
+            <SelectItem value="org">Org members</SelectItem>
           </SelectContent>
         </Select>
       </div>

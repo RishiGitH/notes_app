@@ -22,7 +22,7 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { getDb } from "@/lib/db/client";
-import { notes, noteVersions } from "@/lib/db/schema";
+import { notes, noteVersions, noteTags, tags } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/server";
 import { requireOrgAccess } from "@/lib/security/permissions";
 import { logAudit } from "@/lib/logging/audit";
@@ -181,12 +181,29 @@ export async function searchNotes(
       },
     });
 
+    // Fetch tags for all matched note IDs in one query.
+    const noteIds = rows.map((r) => r.id);
+    let tagsByNoteId: Record<string, string[]> = {};
+    if (noteIds.length > 0) {
+      const tagRows = await db
+        .select({ noteId: noteTags.noteId, tagName: tags.name })
+        .from(noteTags)
+        .innerJoin(tags, eq(tags.id, noteTags.tagId))
+        .where(sql`${noteTags.noteId} = ANY(ARRAY[${sql.join(noteIds.map((id) => sql`${id}::uuid`), sql`, `)}])`);
+      for (const row of tagRows) {
+        const bucket = tagsByNoteId[row.noteId] ?? [];
+        bucket.push(row.tagName);
+        tagsByNoteId[row.noteId] = bucket;
+      }
+    }
+
     return rows.map((r) => ({
       id: r.id,
       title: r.title,
       snippet: r.snippet ? sanitizeSnippet(r.snippet) : r.snippet,
       orgId: r.orgId,
       updatedAt: r.updatedAt,
+      tags: tagsByNoteId[r.id] ?? [],
     }));
   });
 }

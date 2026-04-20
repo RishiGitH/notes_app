@@ -20,6 +20,7 @@ export const searchNoteResult = z.object({
   snippet: z.string().nullable(),
   orgId: z.string().uuid(),
   updatedAt: z.date(),
+  tags: z.array(z.string()),
 });
 
 export type SearchNoteResult = z.infer<typeof searchNoteResult>;

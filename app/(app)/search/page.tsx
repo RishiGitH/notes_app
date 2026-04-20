@@ -12,7 +12,8 @@ import { EmptyState } from "@/components/empty-state";
 import { ErrorAlert } from "@/components/error-alert";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, FileText, Clock } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Search, FileText, Clock, Tag } from "lucide-react";
 
 function formatDate(d: Date) {
   return new Intl.DateTimeFormat("en-US", {
@@ -121,6 +122,16 @@ export default async function SearchPage({
                       // only literal <mark>/<mark> tags remain (F-0009 fix)
                       dangerouslySetInnerHTML={{ __html: note.snippet }}
                     />
+                  )}
+                  {note.tags.length > 0 && (
+                    <div className="flex items-center gap-1.5 pl-6 flex-wrap">
+                      <Tag className="h-3 w-3 text-muted-foreground shrink-0" />
+                      {note.tags.map((t) => (
+                        <Badge key={t} variant="secondary" className="text-xs px-1.5 py-0">
+                          {t}
+                        </Badge>
+                      ))}
+                    </div>
                   )}
                   <div className="flex items-center gap-1 text-xs text-muted-foreground pl-6">
                     <Clock className="h-3 w-3" />
