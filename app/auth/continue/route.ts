@@ -6,7 +6,6 @@ import {
   normalizeNextPath,
   resolveAuthBootstrap,
 } from "@/lib/auth/navigation";
-import { buildPublicRedirectUrl } from "@/lib/http/redirect";
 
 export const runtime = "nodejs";
 
@@ -51,7 +50,7 @@ export async function GET(request: NextRequest) {
       if (authError) {
         console.warn("[auth/continue] getUser failed:", authError.message);
       }
-      const loginUrl = buildPublicRedirectUrl(request, buildLoginPath(normalizedNext));
+      const loginUrl = new URL(buildLoginPath(normalizedNext), request.url);
       const res = NextResponse.redirect(loginUrl, { status: 307 });
       for (const { name, value, options } of pendingCookies) {
         res.cookies.set(name, value, options);
@@ -93,7 +92,7 @@ export async function GET(request: NextRequest) {
       decision.orgCookieToSet ?? "none",
     );
 
-    const destUrl = buildPublicRedirectUrl(request, decision.destination);
+    const destUrl = new URL(decision.destination, request.url);
     const response = NextResponse.redirect(destUrl, { status: 307 });
 
     // Copy refreshed session cookies onto the redirect so the browser sends
