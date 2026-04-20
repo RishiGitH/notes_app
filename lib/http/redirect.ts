@@ -100,6 +100,10 @@ export function redirectToInternalPath(
 
   const headers = new Headers(typeof init === "object" ? init.headers : undefined);
   headers.set("Location", String(buildPublicRedirectUrl(request, target)));
+  // Prevent CDN/edge caches from caching redirect responses. Without this,
+  // Railway's edge proxy applies s-maxage=31536000 to 307s with no
+  // Cache-Control, causing stale redirects to be served to authenticated users.
+  headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
 
   return new NextResponse(null, {
     ...(typeof init === "object" ? init : {}),
