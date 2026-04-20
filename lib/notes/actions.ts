@@ -184,6 +184,7 @@ export interface NoteDetail {
   currentVersionNumber: number;
   updatedAt: string;
   canEdit: boolean;
+  tags: string[];
 }
 
 export async function getNoteAction(
@@ -233,6 +234,15 @@ export async function getNoteAction(
     .maybeSingle();
   const authorEmail = (authorUser?.email as string | null) ?? "";
 
+  // Fetch tags for this note via user-scoped client (RLS on note_tags).
+  const { data: noteTags } = await supabase
+    .from("note_tags")
+    .select("tags(name)")
+    .eq("note_id", noteId);
+  const tags = ((noteTags ?? []) as unknown as { tags: { name: string } | null }[])
+    .map((nt) => nt.tags?.name)
+    .filter((n): n is string => typeof n === "string");
+
   await withContext(ctx, () =>
     logAudit({
       action: "note.view",
@@ -253,6 +263,7 @@ export async function getNoteAction(
     currentVersionNumber: version.version_number as number,
     updatedAt: note.updated_at as string,
     canEdit: editAccess,
+    tags,
   };
 }
 

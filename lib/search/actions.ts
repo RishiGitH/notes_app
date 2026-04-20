@@ -95,7 +95,50 @@ export async function searchNotes(
     // which Postgres will faithfully return but user-authored note content will
     // never contain (input is validated and stored as Unicode text without these
     // codepoints). This is the canonical safe pattern for ts_headline + HTML.
-    const tsQuery = sql`plainto_tsquery('english', ${query})`;
+    // buildTsQuery: converts user input to a tsquery that supports prefix
+    // matching on the last token (so "wo" matches "works", "wor" matches
+    // "word", etc.). Strategy:
+    //   1. Split on whitespace to get tokens.
+    //   2. Escape each token with plainto_tsquery to strip special chars.
+    //   3. Append :* to the last token for prefix matching.
+    //   4. AND all tokens together.
+    // This keeps the safety of plainto_tsquery (no injection via operators)
+    // while adding prefix support on the final token.
+    // Tags (weight C) use 'simple' dictionary; we query with 'english' which
+    // also matches simple lexemes because simple just lowercases — the C-weight
+    // lexemes are stored as lowercase tokens and 'english' stemmer will find them.
+    function buildPrefixTsQuery(rawQuery: string): ReturnType<typeof sql> {
+      const tokens = rawQuery.trim().split(/\s+/).filter(Boolean);
+      if (tokens.length === 0) return sql`plainto_tsquery('english', ${rawQuery})`;
+
+      if (tokens.length === 1) {
+        // Single token — safe to use prefix directly.
+        // to_tsquery requires we sanitize the token first; we strip anything
+        // that isn't alphanumeric, hyphen, or apostrophe.
+        const safe = tokens[0]!.replace(/[^a-zA-Z0-9\-']/g, "");
+        if (!safe) return sql`plainto_tsquery('english', ${rawQuery})`;
+        return sql`to_tsquery('english', ${safe + ":*"})`;
+      }
+
+      // Multi-token: treat all but the last as complete words (plainto_tsquery
+      // is safe for those), and the last as a prefix.
+      const lastToken = tokens[tokens.length - 1]!;
+      const safeLastToken = lastToken.replace(/[^a-zA-Z0-9\-']/g, "");
+      const prefixExpr = safeLastToken ? safeLastToken + ":*" : null;
+      const priorTokens = tokens.slice(0, -1).join(" ");
+
+      if (!prefixExpr) {
+        // Last token stripped to nothing — just use plainto for everything.
+        return sql`plainto_tsquery('english', ${rawQuery})`;
+      }
+
+      return sql`(
+        plainto_tsquery('english', ${priorTokens}) &&
+        to_tsquery('english', ${prefixExpr})
+      )`;
+    }
+
+    const tsQuery = buildPrefixTsQuery(query);
     const snippetOptions = `MaxWords=30, MinWords=10, StartSel=${SNIPPET_MARK_OPEN}, StopSel=${SNIPPET_MARK_CLOSE}`;
 
     const rows = await db

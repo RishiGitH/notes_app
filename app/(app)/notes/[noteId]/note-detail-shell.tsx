@@ -36,6 +36,7 @@ import {
   Paperclip,
   Sparkles,
   Share2,
+  Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VISIBILITY_VARIANTS, VISIBILITY_LABELS, formatDate } from "@/lib/utils/note-display";
@@ -43,6 +44,7 @@ import { VISIBILITY_VARIANTS, VISIBILITY_LABELS, formatDate } from "@/lib/utils/
 const TABS = [
   { id: "read", label: "Read", icon: Eye, href: "" },
   { id: "edit", label: "Edit", icon: Pencil, href: "?tab=edit" },
+  { id: "tags", label: "Tags", icon: Tag, href: "?tab=tags" },
   { id: "versions", label: "Versions", icon: GitCommit, href: "?tab=versions" },
   { id: "files", label: "Files", icon: Paperclip, href: "?tab=files" },
   { id: "ai", label: "AI Summary", icon: Sparkles, href: "?tab=ai" },

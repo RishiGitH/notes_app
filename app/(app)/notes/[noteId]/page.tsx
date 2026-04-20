@@ -5,11 +5,13 @@ import { getNoteAction, listVersionsAction } from "@/lib/notes/actions";
 import { listSharesAction } from "@/lib/notes/share-actions";
 import { listNoteFiles } from "@/lib/files/actions";
 import { getLatestSummary } from "@/lib/ai/summarize";
+import { listTagsAction } from "@/lib/notes/tag-actions";
 import { MarkdownBody } from "@/components/markdown-body";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorAlert } from "@/components/error-alert";
 import { EditForm } from "./edit-form";
 import { SharePanel } from "./share-panel";
+import { TagsPanel } from "./tags-panel";
 import { VersionsTab } from "./versions-tab";
 import { FilesTab } from "./files-tab";
 import { AiSummaryTab } from "./ai-summary-tab";
@@ -79,9 +81,23 @@ export default async function NoteDetailPage({
     );
   }
 
+  // --- Tags tab ---
+  if (tab === "tags") {
+    const allOrgTags = await listTagsAction(orgId);
+    const orgTags = "error" in allOrgTags ? [] : allOrgTags;
+    return (
+      <TagsPanel
+        noteId={noteId}
+        orgId={orgId}
+        currentTags={noteResult.tags}
+        allOrgTags={orgTags}
+        canEdit={noteResult.canEdit}
+      />
+    );
+  }
+
   // --- Versions tab ---
-  if (tab === "versions") {
-    const versionsResult = await listVersionsAction(noteId, orgId);
+  if (tab === "versions") {    const versionsResult = await listVersionsAction(noteId, orgId);
     if ("error" in versionsResult) {
       return <ErrorAlert message={versionsResult.error} />;
     }
