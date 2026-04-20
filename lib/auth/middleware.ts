@@ -3,9 +3,11 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { ulid } from "ulid";
 import {
   AUTH_CONTINUE_PATH,
+  buildAuthContinuePath,
   buildLoginPath,
   shouldRedirectAuthenticatedEntry,
 } from "@/lib/auth/navigation";
+import { redirectToInternalPath } from "@/lib/http/redirect";
 
 // Public paths that do not require authentication. Everything else under
 // (app) is protected — unauthenticated requests are redirected to /login.
@@ -114,23 +116,19 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (!user && !isPublicPath(pathname)) {
-    const loginUrl = new URL(buildLoginPath(returnTo, "/notes"), request.url);
     console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: "redirect_login" }));
-    return withPendingCookies(NextResponse.redirect(loginUrl));
+    return withPendingCookies(
+      redirectToInternalPath(buildLoginPath(returnTo, "/notes")),
+    );
   }
 
   if (user && shouldRedirectAuthenticatedEntry(request.method, pathname)) {
-    const continueUrl = request.nextUrl.clone();
-    continueUrl.pathname = AUTH_CONTINUE_PATH;
-    continueUrl.search = "";
-    if (pathname === "/login") {
-      const nextPath = request.nextUrl.searchParams.get("next");
-      if (nextPath) {
-        continueUrl.searchParams.set("next", nextPath);
-      }
-    }
+    const nextPath =
+      pathname === "/login" ? request.nextUrl.searchParams.get("next") : null;
     console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: "redirect_continue" }));
-    return withPendingCookies(NextResponse.redirect(continueUrl));
+    return withPendingCookies(
+      redirectToInternalPath(buildAuthContinuePath(nextPath)),
+    );
   }
 
   console.log(JSON.stringify({ event: "request", method: request.method, path: pathname, ms: Date.now() - start, auth: user ? "ok" : "public" }));

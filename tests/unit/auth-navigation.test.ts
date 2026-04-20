@@ -5,6 +5,7 @@ import {
   resolveAuthBootstrap,
   shouldRedirectAuthenticatedEntry,
 } from "@/lib/auth/navigation";
+import { redirectToInternalPath } from "@/lib/http/redirect";
 import { isPublicPath } from "@/lib/auth/middleware";
 
 describe("normalizeNextPath", () => {
@@ -99,6 +100,21 @@ describe("auth bootstrap routing helpers", () => {
   it("builds canonical auth-continue paths", () => {
     expect(buildAuthContinuePath("/notes/123")).toBe(
       "/auth/continue?next=%2Fnotes%2F123",
+    );
+  });
+
+  it("creates relative redirect responses for internal auth targets", () => {
+    const response = redirectToInternalPath(buildAuthContinuePath("/notes"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "/auth/continue?next=%2Fnotes",
+    );
+  });
+
+  it("rejects absolute redirect targets", () => {
+    expect(() => redirectToInternalPath("http://evil.test/login")).toThrow(
+      /internal path/i,
     );
   });
 });

@@ -5,6 +5,7 @@ import {
   normalizeNextPath,
   resolveAuthBootstrap,
 } from "@/lib/auth/navigation";
+import { redirectToInternalPath } from "@/lib/http/redirect";
 
 export const runtime = "nodejs";
 
@@ -27,9 +28,7 @@ export async function GET(request: NextRequest) {
       if (authError) {
         console.warn("[auth/continue] getUser failed:", authError.message);
       }
-      return NextResponse.redirect(
-        new URL(buildLoginPath(normalizedNext), request.url),
-      );
+      return redirectToInternalPath(buildLoginPath(normalizedNext));
     }
 
     const admin = getAdminSupabase();
@@ -66,9 +65,7 @@ export async function GET(request: NextRequest) {
       decision.orgCookieToSet ?? "none",
     );
 
-    const response = NextResponse.redirect(
-      new URL(decision.destination, request.url),
-    );
+    const response = redirectToInternalPath(decision.destination);
 
     if (decision.orgCookieToSet) {
       response.cookies.set("org_id", decision.orgCookieToSet, {
