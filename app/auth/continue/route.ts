@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSupabase, getServerSupabase } from "@/lib/auth/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { getAdminSupabase } from "@/lib/auth/server";
 import {
   buildLoginPath,
   normalizeNextPath,
   resolveAuthBootstrap,
 } from "@/lib/auth/navigation";
-import { redirectToInternalPath } from "@/lib/http/redirect";
+import { buildPublicRedirectUrl } from "@/lib/http/redirect";
 
 export const runtime = "nodejs";
 
@@ -14,10 +15,32 @@ export async function GET(request: NextRequest) {
   const normalizedNext = normalizeNextPath(requestedNext, "/notes");
 
   try {
-    const supabase = await getServerSupabase();
-    if (!supabase) {
-      throw new Error("Supabase server client unavailable");
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const publishable = process.env.SUPABASE_PUBLISHABLE_KEY;
+
+    if (!url || !publishable) {
+      throw new Error("Supabase env vars not set");
     }
+
+    // Use a pending-cookies buffer so we can copy refreshed session cookies
+    // onto the redirect response. NextResponse.redirect() is a plain response
+    // object; @supabase/ssr's setAll() normally writes to next/headers which
+    // is tied to the RSC response pipeline. Here we collect the cookies
+    // manually and apply them to the redirect response.
+    const pendingCookies: { name: string; value: string; options: CookieOptions }[] = [];
+
+    const supabase = createServerClient(url, publishable, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+          for (const c of cookiesToSet) {
+            pendingCookies.push(c);
+          }
+        },
+      },
+    });
 
     const {
       data: { user },
@@ -28,7 +51,12 @@ export async function GET(request: NextRequest) {
       if (authError) {
         console.warn("[auth/continue] getUser failed:", authError.message);
       }
-      return redirectToInternalPath(request, buildLoginPath(normalizedNext));
+      const loginUrl = buildPublicRedirectUrl(request, buildLoginPath(normalizedNext));
+      const res = NextResponse.redirect(loginUrl, { status: 307 });
+      for (const { name, value, options } of pendingCookies) {
+        res.cookies.set(name, value, options);
+      }
+      return res;
     }
 
     const admin = getAdminSupabase();
@@ -65,7 +93,14 @@ export async function GET(request: NextRequest) {
       decision.orgCookieToSet ?? "none",
     );
 
-    const response = redirectToInternalPath(request, decision.destination);
+    const destUrl = buildPublicRedirectUrl(request, decision.destination);
+    const response = NextResponse.redirect(destUrl, { status: 307 });
+
+    // Copy refreshed session cookies onto the redirect so the browser sends
+    // them on the next request (to /org/create or /notes).
+    for (const { name, value, options } of pendingCookies) {
+      response.cookies.set(name, value, options);
+    }
 
     if (decision.orgCookieToSet) {
       response.cookies.set("org_id", decision.orgCookieToSet, {
@@ -85,3 +120,4 @@ export async function GET(request: NextRequest) {
     return new NextResponse("Auth bootstrap failed", { status: 500 });
   }
 }
+
