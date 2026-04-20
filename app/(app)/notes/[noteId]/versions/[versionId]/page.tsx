@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/server";
+import { buildAuthContinuePath } from "@/lib/auth/navigation";
 import { getVersionAction, getNoteAction } from "@/lib/notes/actions";
 import { ErrorAlert } from "@/components/error-alert";
 import { PageHeader } from "@/components/page-header";
@@ -23,7 +24,8 @@ export default async function VersionDiffPage({
   }
 
   const h = await headers();
-  const orgId = h.get("x-org-id") ?? "";
+  const orgId = h.get("x-org-id");
+  if (!orgId) redirect(buildAuthContinuePath(h.get("x-return-to"), "/notes"));
   const { noteId, versionId } = await params;
 
   const [versionResult, currentResult] = await Promise.all([

@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth/server";
+import { buildAuthContinuePath } from "@/lib/auth/navigation";
 import { getNoteAction, listVersionsAction } from "@/lib/notes/actions";
 import { listSharesAction } from "@/lib/notes/share-actions";
 import { listNoteFiles } from "@/lib/files/actions";
@@ -24,7 +24,8 @@ export default async function NoteDetailPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const h = await headers();
-  const orgId = h.get("x-org-id") ?? "";
+  const orgId = h.get("x-org-id");
+  if (!orgId) redirect(buildAuthContinuePath(h.get("x-return-to"), "/notes"));
 
   const { noteId } = await params;
   const { tab = "read" } = await searchParams;

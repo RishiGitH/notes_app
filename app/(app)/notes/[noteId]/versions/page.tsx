@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/server";
+import { buildAuthContinuePath } from "@/lib/auth/navigation";
 import { listVersionsAction } from "@/lib/notes/actions";
 import { ErrorAlert } from "@/components/error-alert";
 import { VersionsTab } from "../versions-tab";
@@ -20,7 +21,8 @@ export default async function VersionsPage({
   }
 
   const h = await headers();
-  const orgId = h.get("x-org-id") ?? "";
+  const orgId = h.get("x-org-id");
+  if (!orgId) redirect(buildAuthContinuePath(h.get("x-return-to"), "/notes"));
   const { noteId } = await params;
 
   const result = await listVersionsAction(noteId, orgId);

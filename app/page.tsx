@@ -1,10 +1,15 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth/server";
+import { getServerSupabase } from "@/lib/auth/server";
 
 export default async function RootPage() {
-  const session = await getSession();
-  if (!session) {
+  const supabase = await getServerSupabase();
+  if (!supabase) {
     redirect("/login");
   }
-  redirect("/notes");
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  redirect(user ? "/notes" : "/login");
 }

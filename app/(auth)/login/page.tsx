@@ -19,12 +19,7 @@ import {
   recordAuthFailureAction,
 } from "@/lib/auth/actions";
 import { getBrowserSupabase } from "@/lib/auth/client";
-
-function sanitizeNextPath(nextPath: string | null, fallback: string) {
-  if (!nextPath) return fallback;
-  if (!nextPath.startsWith("/") || nextPath.startsWith("//")) return fallback;
-  return nextPath;
-}
+import { normalizeNextPath } from "@/lib/auth/navigation";
 
 export default function LoginPage() {
   return (
@@ -64,7 +59,7 @@ function LoginPageContent() {
       console.error("[login] finalizeLoginAction:", syncError);
     }
 
-    const nextPath = sanitizeNextPath(searchParams.get("next"), "/notes");
+    const nextPath = normalizeNextPath(searchParams.get("next"), "/notes");
     window.location.replace(nextPath);
   }
 
