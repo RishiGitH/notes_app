@@ -225,3 +225,31 @@ The root cause was that `getFileInfo` used the admin (service-role) database cli
 Changed digital ocean endpoint in server code to use env var and also fixed the docker file to use env var for port instead of hardcoding it to 3000. 
 
 Added proper health check 
+
+---
+
+## Search never returned tag-name hits; notes title "works" with content "NOTE" returned zero results
+
+**high** — fix (migration 0011_fts_tags_and_backfill.sql)
+
+The assignment requires search across titles, content, AND tags. Migration 0008 built
+`search_tsv` from only title (weight A) and content (weight B). Tag names were never
+added to the tsvector. Any search by tag name returned zero hits silently.
+
+Additionally, the trigger on `note_versions` (AFTER INSERT) fired before `current_version_id`
+was updated on the parent `notes` row. The guard `AND current_version_id = NEW.id` evaluated
+false, so the trigger returned early and left `search_tsv` empty. The notes trigger (AFTER UPDATE
+OF current_version_id) fires ~1ms later and repairs it, but a concurrent read in that window —
+or the user's demo note which was only searched once immediately after save — would see an empty
+tsvector. The user's note titled "works" with content "NOTE" produced zero hits for either term.
+
+Fixed in migration 0011:
+- Rewrote `notes_update_search_tsv()` to also aggregate tag names via a JOIN on note_tags/tags
+  (weight C, 'simple' dictionary to avoid stemming short tag tokens like "HR").
+- Added `AFTER INSERT OR DELETE ON note_tags` trigger so tag attach/detach re-indexes the note.
+- Added `AFTER UPDATE OF name ON tags` trigger (with fan-out helper) so tag renames re-index
+  all affected notes.
+- Backfill at migration time re-runs the three-source formula on all non-deleted notes,
+  correcting any rows affected by the trigger race.
+- Extended 08-search-scope-sql.test.ts with: tag-only search, cross-org same-tag-name isolation,
+  tag rename re-index, and the "works/NOTE" regression case.
