@@ -6,32 +6,45 @@ This document outlines how the build process was structured, how work was divide
 
 Work was split across several parallel git worktrees, managing multiple terminal sessions to orchestrate the agents. This allowed momentum to be kept high while pausing to manually review critical code.
 
-**Timeline:**
+### Build Pipeline
 
 ```mermaid
-graph TD
-    S1[Step 1: Schema & RLS Foundation] --> S2[Step 2: Auth & Middleware]
-    
-    S2 --> S3A[Track A: Backend]
-    S2 --> S3B[Track B: Frontend]
-    S2 --> S3C[Track C: Infra & Search]
-    
-    S3A --> S4[Step 4: Merge & Smoke Tests]
-    S3B --> S4
-    S3C --> S4
-    
-    S4 --> S5[Step 5: Security Hardening]
-    S5 --> S6[Step 6: Deploy & Documentation]
+flowchart LR
+    subgraph serial["🔒 Serial Foundation"]
+        direction TB
+        S1["Step 1\nSchema + RLS"]
+        S2["Step 2\nAuth + Middleware"]
+        S1 --> S2
+    end
+
+    subgraph parallel["⚡ Parallel Execution (separate worktrees)"]
+        direction TB
+        A["🔧 Lead Backend\nNotes CRUD · Versioning\nSharing · Tags · RLS Tests"]
+        B["🎨 UI Builder\nPages · shadcn Shell\nDiff Viewer · Search UI"]
+        C["🔍 Search + AI\nFTS Migrations · AI Summarizer\nZod Schemas · Seed Scripts"]
+        D["🚀 Infra + Deploy\nDockerfile · Railway Config\nHealth Checks · CI"]
+    end
+
+    subgraph harden["🛡️ Hardening"]
+        direction TB
+        E["Step 4\nMerge + Smoke Tests"]
+        F["Step 5\nAdversarial Security Review"]
+        G["Step 6\nDeploy + Docs"]
+        E --> F --> G
+    end
+
+    serial --> parallel --> harden
 ```
 
 - **Step 1:** Started with a single backend agent to establish the foundational schema, RLS policies, and basic tenant-isolation scaffolding. This phase had to be strictly serial; the database foundation had to be perfect before any parallel work began.
 
 - **Step 2:** Still working sequentially, the agent built out authentication, middleware, and organization CRUD operations.
 
-- **Step 3 (Parallel Execution):** Once the foundation was solid, three parallel tracks were spun up in separate worktrees:
-  - **Track A (Backend):** Notes CRUD, versioning, tagging, sharing logic, and isolation tests.
-  - **Track B (Frontend):** All UI pages, shadcn shell, diff viewer, and search interfaces.
-  - **Track C (Infra & Search):** Full-text search (FTS) migrations, file pipelines, AI summarizer logic, Dockerization, and seed scripts.
+- **Step 3 (Parallel Execution):** Once the foundation was solid, four parallel tracks were spun up in separate worktrees:
+  - **Lead Backend:** Notes CRUD, versioning, tagging, sharing logic, and isolation tests.
+  - **UI Builder:** All UI pages, shadcn shell, diff viewer, and search interfaces.
+  - **Search + AI:** Full-text search (FTS) migrations, AI summarizer logic, Zod schemas, and seed scripts.
+  - **Infra + Deploy:** Dockerization, Railway configuration, health checks, and CI setup.
 
 - **Step 4:** Branches were merged, seed scripts were run, and initial smoke tests were performed.
 
@@ -39,14 +52,27 @@ graph TD
 
 - **Step 6:** Final deployments, production migrations, and documentation cleanup.
 
-## Agent Utilization
+### Agent Roles
 
-Claude Opus and Claude Sonnet were primarily used, with specific "roles" assigned through custom system prompts to keep them focused.
+```mermaid
+flowchart TB
+    Human["👤 Human Orchestrator\nPrompt Design · Code Review\nMerge Decisions · Trust Boundaries"]
 
-- **Lead Backend (Claude Opus for planning, Sonnet for execution):** Handled schema, RLS policies, auth middleware, Server Actions, and security-critical code. Opus excels at reasoning about multi-tenant boundaries.
-- **UI Builder (Claude Sonnet):** Built out the React components, shadcn integration, and pages.
-- **Search & Infra (Claude Sonnet):** Implemented the FTS migrations, file upload pipelines, and Docker/Railway configurations.
-- **Security & Schema Reviewers (Claude Sonnet):** Specific subagent prompts were used to review diffs adversarially for tenant leaks, RLS holes, missing auth checks, and missing indexes.
+    Human --> LB["🔧 Lead Backend\n(Opus → Sonnet)\nSchema · RLS · Auth\nServer Actions"]
+    Human --> UI["🎨 UI Builder\n(Sonnet)\nReact · shadcn\nPages · Components"]
+    Human --> SA["🔍 Search + AI\n(Sonnet)\nFTS · AI Summary\nFile Pipelines"]
+    Human --> ID["🚀 Infra + Deploy\n(Sonnet)\nDocker · Railway\nHealth · Config"]
+    Human --> SR["🛡️ Security Reviewer\n(Sonnet)\nAdversarial Diffs\nRLS Audit · Auth Gaps"]
+    Human --> SCR["📐 Schema Reviewer\n(Sonnet)\nIndex Coverage\nFK Integrity · Migrations"]
+
+    style Human fill:#1a1a2e,stroke:#e94560,color:#fff
+    style LB fill:#16213e,stroke:#0f3460,color:#fff
+    style UI fill:#16213e,stroke:#0f3460,color:#fff
+    style SA fill:#16213e,stroke:#0f3460,color:#fff
+    style ID fill:#16213e,stroke:#0f3460,color:#fff
+    style SR fill:#533483,stroke:#e94560,color:#fff
+    style SCR fill:#533483,stroke:#e94560,color:#fff
+```
 
 ## Where the Agents Excelled
 
