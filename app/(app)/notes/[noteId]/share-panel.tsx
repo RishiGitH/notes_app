@@ -60,7 +60,7 @@ export function SharePanel({
 }: SharePanelProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [newUserId, setNewUserId] = useState("");
+  const [newEmail, setNewEmail] = useState("");
   const [newPermission, setNewPermission] = useState<"view" | "comment" | "edit">("view");
 
   function handleVisibilityChange(vis: string) {
@@ -80,11 +80,11 @@ export function SharePanel({
   }
 
   function handleGrant() {
-    if (!newUserId.trim()) return;
+    if (!newEmail.trim()) return;
     startTransition(async () => {
       const result = await grantShareAction(
         noteId,
-        newUserId.trim(),
+        newEmail.trim(),
         newPermission,
         orgId,
       );
@@ -93,7 +93,7 @@ export function SharePanel({
         return;
       }
       toast.success("Share granted");
-      setNewUserId("");
+      setNewEmail("");
       router.refresh();
     });
   }
@@ -197,13 +197,14 @@ export function SharePanel({
           <div className="flex items-end gap-2 pt-2">
             <div className="flex-1 space-y-1">
               <Label htmlFor="share-user" className="text-xs text-muted-foreground">
-                User ID
+                Email address
               </Label>
               <Input
                 id="share-user"
-                value={newUserId}
-                onChange={(e) => setNewUserId(e.target.value)}
-                placeholder="user-uuid"
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="colleague@example.com"
                 className="h-8 text-sm"
               />
             </div>
@@ -229,7 +230,7 @@ export function SharePanel({
               size="sm"
               className="h-8"
               onClick={handleGrant}
-              disabled={isPending || !newUserId.trim()}
+              disabled={isPending || !newEmail.trim()}
             >
               <Plus className="h-3.5 w-3.5 mr-1" />
               Grant

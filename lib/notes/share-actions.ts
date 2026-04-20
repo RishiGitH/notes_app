@@ -26,6 +26,15 @@ async function buildCtx(userId: string): Promise<RequestContext> {
 }
 
 const permissionSchema = z.enum(["view", "comment", "edit"]);
+const emailSchema = z.string().email("Invalid email");
+
+// Generic "can't share" message used for every non-success branch below.
+// Distinct messages ("User not found" vs "not in this org") would let any
+// note owner enumerate the user table by probing emails. Same text for
+// every failure mode; the details only go to the audit log (without the
+// email itself, so the log is not an enumeration oracle either).
+const GENERIC_SHARE_ERROR =
+  "Unable to share. Check the email and try again.";
 
 // Check if user is the note author or an org admin/owner.
 // Used for share management (grant/revoke/list): author can share their own
@@ -68,12 +77,17 @@ async function canManageShares(
 
 export async function grantShareAction(
   noteId: string,
-  targetUserId: string,
+  targetEmail: string,
   permission: "view" | "comment" | "edit",
   orgId: string,
 ): Promise<null | { error: string }> {
   const parsedPerm = permissionSchema.safeParse(permission);
   if (!parsedPerm.success) return { error: "Invalid permission value" };
+
+  const parsedEmail = emailSchema.safeParse(targetEmail);
+  if (!parsedEmail.success) {
+    return { error: parsedEmail.error.issues[0]?.message ?? "Invalid email" };
+  }
 
   const user = await requireUser();
   const ctx = await buildCtx(user.id);
@@ -85,7 +99,30 @@ export async function grantShareAction(
 
   const admin = getAdminSupabase();
 
-  // Confirm target user exists and is in this org.
+  // Resolve email → user id. Same pattern as addMemberAction
+  // (lib/org/actions.ts:204-210).
+  const { data: targetUser } = await admin
+    .from("users")
+    .select("id")
+    .eq("email", parsedEmail.data)
+    .maybeSingle();
+
+  if (!targetUser) {
+    await withContext(ctx, () =>
+      logAudit({
+        action: "note_share.grant.failed",
+        resourceType: "note_share",
+        resourceId: noteId,
+        // Email is PII and must not be written to audit_logs.
+        metadata: { orgId, reason: "user_not_found" },
+      }),
+    );
+    return { error: GENERIC_SHARE_ERROR };
+  }
+
+  const targetUserId = targetUser.id as string;
+
+  // Confirm target user is in this org.
   const { data: targetMembership } = await admin
     .from("memberships")
     .select("user_id")
@@ -94,7 +131,15 @@ export async function grantShareAction(
     .maybeSingle();
 
   if (!targetMembership) {
-    return { error: "Target user is not a member of this organization" };
+    await withContext(ctx, () =>
+      logAudit({
+        action: "note_share.grant.failed",
+        resourceType: "note_share",
+        resourceId: noteId,
+        metadata: { orgId, targetUserId, reason: "not_member" },
+      }),
+    );
+    return { error: GENERIC_SHARE_ERROR };
   }
 
   // Upsert: update permission if the share already exists.
