@@ -111,9 +111,17 @@ export default async function SearchPage({
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="font-medium text-sm truncate">
-                      {note.title || "Untitled"}
-                    </span>
+                    {note.titleHighlight ? (
+                      <span
+                        className="font-medium text-sm truncate [&_mark]:bg-yellow-100 [&_mark]:text-yellow-900 [&_mark]:rounded-sm [&_mark]:px-0.5"
+                        // titleHighlight is HTML-escaped by sanitizeSnippet; only <mark> tags remain
+                        dangerouslySetInnerHTML={{ __html: note.titleHighlight }}
+                      />
+                    ) : (
+                      <span className="font-medium text-sm truncate">
+                        {note.title || "Untitled"}
+                      </span>
+                    )}
                   </div>
                   {note.snippet && (
                     <p
@@ -127,8 +135,12 @@ export default async function SearchPage({
                     <div className="flex items-center gap-1.5 pl-6 flex-wrap">
                       <Tag className="h-3 w-3 text-muted-foreground shrink-0" />
                       {note.tags.map((t) => (
-                        <Badge key={t} variant="secondary" className="text-xs px-1.5 py-0">
-                          {t}
+                        <Badge
+                          key={t.name}
+                          variant={t.matched ? "default" : "secondary"}
+                          className="text-xs px-1.5 py-0"
+                        >
+                          {t.name}
                         </Badge>
                       ))}
                     </div>

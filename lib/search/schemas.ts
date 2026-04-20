@@ -17,10 +17,11 @@ export type SearchNotesInput = z.infer<typeof searchNotesInput>;
 export const searchNoteResult = z.object({
   id: z.string().uuid(),
   title: z.string(),
+  titleHighlight: z.string().nullable(),
   snippet: z.string().nullable(),
   orgId: z.string().uuid(),
   updatedAt: z.date(),
-  tags: z.array(z.string()),
+  tags: z.array(z.object({ name: z.string(), matched: z.boolean() })),
 });
 
 export type SearchNoteResult = z.infer<typeof searchNoteResult>;

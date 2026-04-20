@@ -140,6 +140,9 @@ export async function searchNotes(
 
     const tsQuery = buildPrefixTsQuery(query);
     const snippetOptions = `MaxWords=30, MinWords=10, StartSel=${SNIPPET_MARK_OPEN}, StopSel=${SNIPPET_MARK_CLOSE}`;
+    // Title highlight: use HighlightAll=true so the entire title is returned
+    // with matched terms wrapped in sentinels (title is short — no truncation needed).
+    const titleHighlightOptions = `HighlightAll=true, StartSel=${SNIPPET_MARK_OPEN}, StopSel=${SNIPPET_MARK_CLOSE}`;
 
     const rows = await db
       .select({
@@ -147,6 +150,14 @@ export async function searchNotes(
         title: notes.title,
         orgId: notes.orgId,
         updatedAt: notes.updatedAt,
+        titleHighlight: sql<string | null>`
+          ts_headline(
+            'english',
+            ${notes.title},
+            ${tsQuery},
+            ${titleHighlightOptions}
+          )
+        `,
         snippet: sql<string | null>`
           ts_headline(
             'english',
@@ -182,8 +193,11 @@ export async function searchNotes(
     });
 
     // Fetch tags for all matched note IDs in one query.
+    // Also track which tag names match the query tokens (for highlight in UI).
     const noteIds = rows.map((r) => r.id);
-    let tagsByNoteId: Record<string, string[]> = {};
+    // Query tokens (lowercased) used to highlight matching tags client-side.
+    const queryTokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let tagsByNoteId: Record<string, { name: string; matched: boolean }[]> = {};
     if (noteIds.length > 0) {
       const tagRows = await db
         .select({ noteId: noteTags.noteId, tagName: tags.name })
@@ -192,7 +206,9 @@ export async function searchNotes(
         .where(sql`${noteTags.noteId} = ANY(ARRAY[${sql.join(noteIds.map((id) => sql`${id}::uuid`), sql`, `)}])`);
       for (const row of tagRows) {
         const bucket = tagsByNoteId[row.noteId] ?? [];
-        bucket.push(row.tagName);
+        const lower = row.tagName.toLowerCase();
+        const matched = queryTokens.some((t) => lower.includes(t));
+        bucket.push({ name: row.tagName, matched });
         tagsByNoteId[row.noteId] = bucket;
       }
     }
@@ -200,6 +216,7 @@ export async function searchNotes(
     return rows.map((r) => ({
       id: r.id,
       title: r.title,
+      titleHighlight: r.titleHighlight ? sanitizeSnippet(r.titleHighlight) : null,
       snippet: r.snippet ? sanitizeSnippet(r.snippet) : r.snippet,
       orgId: r.orgId,
       updatedAt: r.updatedAt,
